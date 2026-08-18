@@ -1,0 +1,1094 @@
+// ============================================================================
+// Internal Procedure Management System — Prisma schema
+// Multi-tenant. Every model that belongs to a company is scoped by tenantId.
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// TENANCY
+// ---------------------------------------------------------------------------
+
+/// A Tenant is one company/organization using the platform in isolation.
+model Tenant {
+  id           String     @id @default(cuid())
+  slug         String     @unique // used as subdomain: {slug}.procedurehub.com
+  name         String
+  logoUrl      String?
+  primaryColor String?    @default("#2563EB")
+  plan         TenantPlan @default(STANDARD)
+  maxUsers     Int        @default(200)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  users         User[]
+  departments   Department[]
+  procedures    Procedure[]
+  tags          Tag[]
+  templates     Template[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
+  integrations  Integration[]
+  announcements Announcement[]
+  invitations   Invitation[]
+  pages         Page[]
+  databases     Database[]
+  blocks        Block[]
+  jobRoles      JobRole[]
+  aiSuggestions AiSuggestion[]
+  ackCampaigns  AckCampaign[]
+
+  @@map("tenants")
+}
+
+enum TenantPlan {
+  STANDARD
+  ENTERPRISE
+}
+
+// ---------------------------------------------------------------------------
+// USERS, ROLES & PERMISSIONS
+// ---------------------------------------------------------------------------
+
+/// Global role — coarse-grained. Fine-grained access is via DepartmentMembership.
+enum GlobalRole {
+  ADMIN // full control of the tenant: users, settings, integrations
+  COMPLIANCE_OFFICER // can approve compliance-gated procedures across departments, run audit exports
+  USER // baseline; actual editing power comes from DepartmentMembership
+}
+
+/// Per-department role — this is what actually governs edit/approve rights.
+enum DepartmentRole {
+  VIEWER // read-only within the department
+  EDITOR // create/edit drafts, cannot publish
+  DEPARTMENT_OWNER // approve & publish within the department, manage its structure
+}
+
+model User {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  email        String
+  name         String
+  avatarUrl    String?
+  jobTitle     String? // free-text display label — kept alongside jobRoleId, not replaced by it
+  passwordHash String? // null when using SSO only
+  globalRole   GlobalRole @default(USER)
+
+  /// Structured mansione/ruolo — orthogonal to DepartmentRole (which governs
+  /// edit/publish permissions). JobRole is purely informative/assignment:
+  /// which procedures are relevant to this person, for onboarding and
+  /// targeted visibility. Never used in a permission check.
+  jobRoleId String?
+  jobRole   JobRole? @relation(fields: [jobRoleId], references: [id])
+
+  ssoProvider  String? // e.g. "azure-ad" once Entra ID is wired up
+  ssoSubjectId String?
+
+  /// Optional reporting line — only consumed by Fase 4's day-14 Read & Ack
+  /// escalation (falls back to Procedure.ownerId if a tenant never
+  /// populates this). Not used anywhere else, not a permission input.
+  managerId String?
+  manager   User?   @relation("managerOf", fields: [managerId], references: [id], onDelete: SetNull)
+  reports   User[]  @relation("managerOf")
+
+  isActive    Boolean   @default(true)
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  memberships        DepartmentMembership[]
+  authoredProcedures Procedure[]             @relation("authoredProcedures")
+  ownedProcedures    Procedure[]             @relation("ownedProcedures")
+  procedureVersions  ProcedureVersion[]
+  reviewSteps        WorkflowStep[]
+  acknowledgments    Acknowledgment[]
+  auditLogs          AuditLog[]
+  notifications      Notification[]
+  notificationPrefs  NotificationPreference?
+  comments           Comment[]
+  favorites          Favorite[]
+  slackIdentity      SlackUserIdentity?
+  gchatIdentity      GoogleChatUserIdentity?
+  createdPages       Page[]                  @relation("createdPages")
+  ownedPages         Page[]                  @relation("ownedPages")
+  createdDatabases   Database[]              @relation("createdDatabases")
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@map("users")
+}
+
+/// Grants a user a role scoped to one department. A user can belong to many departments.
+model DepartmentMembership {
+  id           String         @id @default(cuid())
+  userId       String
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  departmentId String
+  department   Department     @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  role         DepartmentRole @default(VIEWER)
+  createdAt    DateTime       @default(now())
+
+  @@unique([userId, departmentId])
+  @@index([departmentId])
+  @@map("department_memberships")
+}
+
+/// Pending invite for a not-yet-registered user (email + intended role).
+model Invitation {
+  id           String          @id @default(cuid())
+  tenantId     String
+  tenant       Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  email        String
+  globalRole   GlobalRole      @default(USER)
+  departmentId String?
+  role         DepartmentRole?
+  token        String          @unique
+  invitedById  String
+  expiresAt    DateTime
+  acceptedAt   DateTime?
+  createdAt    DateTime        @default(now())
+
+  @@index([tenantId])
+  @@map("invitations")
+}
+
+// ---------------------------------------------------------------------------
+// WORKSPACE PAGES  (Notion-style: a nestable tree of block-content pages)
+// ---------------------------------------------------------------------------
+
+/// A generic workspace Page. Pages nest arbitrarily via parentId (the sidebar
+/// tree), and each page's body is a block document stored as Tiptap JSON in
+/// `content`. This is the Notion architecture layered alongside the rigid
+/// Department -> Procedure hierarchy — the two coexist.
+model Page {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  parentId String?
+  parent   Page?   @relation("PageChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children Page[]  @relation("PageChildren")
+
+  title    String  @default("Senza titolo")
+  icon     String? // emoji, e.g. "📄"
+  coverUrl String?
+
+  /// Which Template this page was created from, if any — lets gap-analysis
+  /// (Fase 5 Parte B) compare the page's actual sections against the
+  /// template's expected structure instead of guessing.
+  templateId String?
+  template   Template? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  /// Legacy single-blob content — superseded by `blocks` (Fase 2b). Kept as
+  /// a historical snapshot for manual rollback, not read by the editor
+  /// anymore once a Page has been migrated (see scripts/migrate-pages-to-blocks.ts).
+  content Json? // block document (Tiptap JSON)
+
+  blocks         Block[]
+  aiSuggestions  AiSuggestion[]
+
+  /// If this page was "promoted" to a governed Documento Controllato — see
+  /// Procedure.pageId. Null = free page (or the "pagina governata"
+  /// intermediate level below, which only sets ownerId).
+  procedure Procedure?
+
+  /// Owner for the intermediate "pagina governata" level (owner + review
+  /// date, no approval workflow) — set without creating a Procedure.
+  ownerId String?
+  owner   User?   @relation("ownedPages", fields: [ownerId], references: [id])
+
+  sortOrder  Int     @default(0)
+  isArchived Boolean @default(false)
+
+  createdById String
+  createdBy   User   @relation("createdPages", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, parentId])
+  @@index([tenantId, isArchived])
+  @@map("pages")
+}
+
+// ---------------------------------------------------------------------------
+// DATABASES  (Notion-style: a collection of pages/rows with a property schema
+// and multiple views — table, board — over the same underlying rows)
+// ---------------------------------------------------------------------------
+
+/// A Database groups rows under a shared schema. Columns and views are real
+/// rows (DatabaseColumn/DatabaseView) as of Fase 2 — moved off the original
+/// single-JSON-array design specifically so RELATION columns can be backed
+/// by real, indexed, bidirectionally-queryable rows (DatabaseRowRelation)
+/// instead of an opaque id living inside a JSON blob. The row's primary
+/// "title" is an implicit first column, not itself a DatabaseColumn.
+model Database {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  title String  @default("Database senza titolo")
+  icon  String?
+
+  /// Reserved for the future system-generated "Registro Procedure" — not
+  /// wired up yet (no auto-sync hook in lib/workflow), just reserving the
+  /// field so that phase doesn't need another migration.
+  isSystemManaged Boolean @default(false)
+
+  /// Pre-Fase-2 schema, superseded by `columns`/`views` below. Kept as a
+  /// historical snapshot for manual rollback — not read by the app anymore
+  /// once scripts/migrate-database-columns.ts has run for this row.
+  propertiesLegacy Json @default("[]") @map("properties") // ex Property[] — defaulted so new databases (created via columns/views now) don't need to populate this dead field
+  viewsLegacy      Json @default("[]") @map("views") // ex View[]
+
+  createdById String
+  createdBy   User   @relation("createdDatabases", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  columns DatabaseColumn[]
+  views   DatabaseView[]
+  rows    DatabaseRow[]
+
+  @@index([tenantId])
+  @@map("databases")
+}
+
+/// A single typed column, replacing the old `Database.properties` JSON
+/// array entry-for-entry (same ids preserved by the migration script, so
+/// existing DatabaseRow.values keys — which are property ids — stay valid).
+model DatabaseColumn {
+  id         String   @id @default(cuid())
+  databaseId String
+  database   Database @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+
+  name      String
+  type      ColumnType
+  sortOrder Int
+
+  /// SELECT: { options: [{ id, name, color }] }. RELATION: { targetDatabaseId }.
+  /// Options stay JSON here (a short list, no need for its own table) —
+  /// only RELATION graduates to real rows (DatabaseRowRelation), because
+  /// that's the one case that must be indexed/queryable from both sides.
+  config Json @default("{}")
+
+  rowRelations DatabaseRowRelation[]
+
+  @@index([databaseId])
+  @@map("database_columns")
+}
+
+enum ColumnType {
+  TEXT
+  NUMBER
+  DATE
+  SELECT
+  CHECKBOX
+  RELATION
+  // Reserved for a future fase — in the schema now so introducing them
+  // later doesn't need another migration, but no application logic reads
+  // these yet.
+  ROLLUP
+  FORMULA
+  PERSON
+  URL
+  EMAIL
+  PHONE
+  FILE
+  CREATED_TIME
+  UPDATED_TIME
+}
+
+/// Replaces the old `Database.views` JSON array entry-for-entry, same ids
+/// preserved by the migration script.
+model DatabaseView {
+  id         String   @id @default(cuid())
+  databaseId String
+  database   Database @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+
+  name            String
+  type            ViewType
+  groupByColumnId String?
+
+  /// null = shared/default view; set = personal view visible only to its
+  /// creator. Field exists now, no personal-view UI yet.
+  createdById String?
+
+  createdAt DateTime @default(now())
+
+  @@index([databaseId])
+  @@map("database_views")
+}
+
+enum ViewType {
+  TABLE
+  BOARD
+  // Reserved for a future fase, same reasoning as ColumnType above.
+  CALENDAR
+  GALLERY
+  LIST
+  TIMELINE
+}
+
+/// One row of a Database. `values` maps columnId -> scalar value (string for
+/// text / select-option-id / ISO date, number, or boolean) for every
+/// non-RELATION column. RELATION columns are never written into `values` —
+/// they live in DatabaseRowRelation, the one thing a JSON blob genuinely
+/// couldn't do (indexed, bidirectionally queryable). The row is also a page
+/// in spirit — `title` is its primary field.
+model DatabaseRow {
+  id         String   @id @default(cuid())
+  databaseId String
+  database   Database @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+
+  title     String @default("")
+  values    Json   @default("{}")
+  sortOrder Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  relationsFrom DatabaseRowRelation[] @relation("rowRelFrom")
+  relationsTo   DatabaseRowRelation[] @relation("rowRelTo")
+
+  @@index([databaseId])
+  @@map("database_rows")
+}
+
+/// A single link created by a RELATION column. Bidirectional by
+/// construction: a link from A to B is visible querying from either side,
+/// so a future rollup ("how many rows point at me") never needs a separate
+/// reverse-lookup query.
+model DatabaseRowRelation {
+  id        String         @id @default(cuid())
+  columnId  String // which RELATION DatabaseColumn produced this link
+  column    DatabaseColumn @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  fromRowId String
+  fromRow   DatabaseRow    @relation("rowRelFrom", fields: [fromRowId], references: [id], onDelete: Cascade)
+  toRowId   String
+  toRow     DatabaseRow    @relation("rowRelTo", fields: [toRowId], references: [id], onDelete: Cascade)
+  createdAt DateTime       @default(now())
+
+  @@unique([columnId, fromRowId, toRowId])
+  @@index([toRowId])
+  @@map("database_row_relations")
+}
+
+// ---------------------------------------------------------------------------
+// DEPARTMENTS & HIERARCHY  (Department -> Process -> Procedure -> Work Instruction)
+// ---------------------------------------------------------------------------
+
+model Department {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  slug        String
+  description String?
+  icon        String? // lucide icon name
+  color       String?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  memberships DepartmentMembership[]
+  processes   Process[]
+  procedures  Procedure[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@map("departments")
+}
+
+/// Optional mid-level grouping between Department and Procedure
+/// e.g. Legal & Compliance -> "GDPR" (Process) -> "Data Subject Requests" (Procedure)
+model Process {
+  id           String     @id @default(cuid())
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  parentId     String? // self-relation enables arbitrary sub-process nesting
+  parent       Process?   @relation("ProcessChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children     Process[]  @relation("ProcessChildren")
+  name         String
+  description  String?
+  sortOrder    Int        @default(0)
+  createdAt    DateTime   @default(now())
+
+  procedures Procedure[]
+
+  @@index([departmentId])
+  @@index([parentId])
+  @@map("processes")
+}
+
+// ---------------------------------------------------------------------------
+// PROCEDURES, VERSIONING, WORK INSTRUCTIONS
+// ---------------------------------------------------------------------------
+
+enum DocumentType {
+  PROCEDURE
+  WORK_INSTRUCTION
+  POLICY
+  SOP
+  FORM
+  TEMPLATE
+  FAQ
+}
+
+enum DocumentStatus {
+  DRAFT
+  IN_REVIEW
+  COMPLIANCE_APPROVAL
+  MANAGEMENT_APPROVAL
+  PUBLISHED
+  ARCHIVED
+  REJECTED
+}
+
+model Procedure {
+  id           String      @id @default(cuid())
+  tenantId     String
+  tenant       Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  departmentId String
+  department   Department  @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  processId    String?
+  process      Process?    @relation(fields: [processId], references: [id])
+  parentId     String? // for Work Instructions nested under a Procedure
+  parent       Procedure?  @relation("ProcedureChildren", fields: [parentId], references: [id])
+  children     Procedure[] @relation("ProcedureChildren")
+
+  /// Set when this Procedure was "promoted" from a free Page (Fase 3) —
+  /// content then lives in that Page's Block.pageId tree, not
+  /// Block.procedureId (see src/lib/blocks/parent.ts). Null for a
+  /// classic procedure created directly via POST /api/procedures.
+  pageId String? @unique
+  page   Page?   @relation(fields: [pageId], references: [id], onDelete: SetNull)
+
+  code    String // human-readable procedure number, e.g. "HR-PRO-014"
+  title   String
+  summary String?
+  type    DocumentType   @default(PROCEDURE)
+  status  DocumentStatus @default(DRAFT)
+
+  currentVersionId String?            @unique
+  currentVersion   ProcedureVersion?  @relation("CurrentVersion", fields: [currentVersionId], references: [id])
+  versions         ProcedureVersion[] @relation("AllVersions")
+
+  authorId String
+  author   User    @relation("authoredProcedures", fields: [authorId], references: [id])
+  ownerId  String? // Document Owner responsible for periodic review
+  owner    User?   @relation("ownedProcedures", fields: [ownerId], references: [id])
+
+  requiresAck Boolean    @default(false) // Read & Acknowledge required
+  isCritical  Boolean    @default(false) // "Critical Process" tag-equivalent flag
+  visibility  Visibility @default(DEPARTMENT) // access restriction beyond RBAC
+
+  reviewDate      DateTime? // last review
+  nextReviewDate  DateTime? // triggers reminders
+  reviewCycleDays Int?      @default(365)
+  /// Set by the daily review-reminder cron the moment it notifies the
+  /// owner — the idempotency guard so re-running (or running more than
+  /// once/day) never re-sends. Compared against nextReviewDate rather than
+  /// just checked for null, so pushing nextReviewDate forward (a fresh
+  /// review cycle) naturally re-arms the reminder.
+  reviewReminderSentAt DateTime?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  publishedAt DateTime?
+  archivedAt  DateTime?
+
+  tags            ProcedureTag[]
+  jobRoles        ProcedureJobRole[]
+  attachments     Attachment[]
+  relatedFrom     ProcedureRelation[] @relation("relFrom")
+  relatedTo       ProcedureRelation[] @relation("relTo")
+  acknowledgments Acknowledgment[]
+  ackCampaigns    AckCampaign[]
+  comments        Comment[]
+  favorites       Favorite[]
+  workflowSteps   WorkflowStep[]
+  auditLogs       AuditLog[]
+  blocks          Block[]
+
+  /// Merged Yjs document state for the live block-editing session (Phase 1
+  /// block engine). Written by collab-server on debounce, not by any Next.js
+  /// route. Null until the procedure is first opened in the block editor.
+  collaborativeStateB64 Bytes?
+
+  @@unique([tenantId, code])
+  @@index([tenantId, departmentId])
+  @@index([tenantId, status])
+  @@map("procedures")
+}
+
+enum Visibility {
+  PUBLIC // all tenant users
+  DEPARTMENT // only department members (any role)
+  RESTRICTED // explicit membership required (e.g. Legal-only)
+}
+
+/// Immutable snapshot of content — every edit that reaches Review creates a new version.
+model ProcedureVersion {
+  id            String    @id @default(cuid())
+  procedureId   String
+  procedure     Procedure @relation("AllVersions", fields: [procedureId], references: [id], onDelete: Cascade)
+  versionNumber Int
+  contentJson   Json // Tiptap/ProseMirror JSON document
+  contentHtml   String // rendered cache, for search indexing & export
+  changelog     String?
+  authorId      String
+  author        User      @relation(fields: [authorId], references: [id])
+  createdAt     DateTime  @default(now())
+
+  currentFor Procedure? @relation("CurrentVersion")
+
+  @@unique([procedureId, versionNumber])
+  @@index([procedureId])
+  @@map("procedure_versions")
+}
+
+// ---------------------------------------------------------------------------
+// BLOCK ENGINE (Phase 1 — "motore a blocchi")
+// ---------------------------------------------------------------------------
+
+/// A block of content. Conceptually replaces ProcedureVersion.contentJson as
+/// the source of truth for *live* content; ProcedureVersion stays as-is for
+/// the immutable published/history snapshot. Belongs to exactly one of
+/// Procedure or Page (enforced in code — Prisma has no native "exactly one
+/// of" constraint) — unified in Fase 2b so the product has a single content
+/// model instead of Block (Procedure) and Page.content (single JSON blob)
+/// diverging forever.
+model Block {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  procedureId String?
+  procedure   Procedure? @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+
+  pageId String?
+  page   Page?   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  parentBlockId String?
+  parentBlock   Block?  @relation("BlockChildren", fields: [parentBlockId], references: [id], onDelete: Cascade)
+  children      Block[] @relation("BlockChildren")
+
+  type      BlockType
+  /// Type-specific content, e.g. { text: [...ProseMirror inline nodes] } for
+  /// paragraph, { url, caption } for image, { language, code } for code.
+  /// Kept as Json instead of dedicated columns because block types will keep
+  /// growing (a future phase adds "database_view") — one migration per type
+  /// isn't worth it.
+  content   Json
+  sortOrder Int // order among siblings (same parentBlockId, or root if null)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([procedureId, parentBlockId, sortOrder])
+  @@index([pageId, parentBlockId, sortOrder])
+  @@map("blocks")
+}
+
+enum BlockType {
+  PARAGRAPH
+  HEADING_1
+  HEADING_2
+  HEADING_3
+  BULLETED_LIST_ITEM
+  NUMBERED_LIST_ITEM
+  TOGGLE_LIST_ITEM
+  CHECKLIST_ITEM
+  CALLOUT
+  QUOTE
+  DIVIDER
+  COLUMN_LIST
+  COLUMN
+  CODE
+  IMAGE
+  VIDEO
+  AUDIO
+  FILE
+  EMBED
+  DIAGRAM
+  TABLE_SIMPLE
+  TABLE_OF_CONTENTS
+  PAGE_LINK
+  SYNCED_BLOCK_SOURCE
+  SYNCED_BLOCK_REFERENCE
+}
+
+/// Non-directional-by-default link between two procedures (e.g. Onboarding -> Training).
+model ProcedureRelation {
+  id     String    @id @default(cuid())
+  fromId String
+  from   Procedure @relation("relFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  toId   String
+  to     Procedure @relation("relTo", fields: [toId], references: [id], onDelete: Cascade)
+  label  String? // e.g. "next step", "related policy"
+
+  @@unique([fromId, toId])
+  @@map("procedure_relations")
+}
+
+model Attachment {
+  id            String    @id @default(cuid())
+  procedureId   String
+  procedure     Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+  fileName      String
+  fileType      String // pdf, docx, xlsx, pptx, png, mp4, zip, ...
+  fileSizeBytes Int
+  storageKey    String // path/key in blob storage (S3 / Azure Blob / GCS)
+  uploadedById  String
+  createdAt     DateTime  @default(now())
+
+  @@index([procedureId])
+  @@map("attachments")
+}
+
+model Comment {
+  id          String    @id @default(cuid())
+  procedureId String
+  procedure   Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      User      @relation(fields: [authorId], references: [id])
+  body        String
+  parentId    String?
+  parent      Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies     Comment[] @relation("CommentReplies")
+  createdAt   DateTime  @default(now())
+
+  @@index([procedureId])
+  @@map("comments")
+}
+
+model Favorite {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  procedureId String
+  procedure   Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@unique([userId, procedureId])
+  @@map("favorites")
+}
+
+// ---------------------------------------------------------------------------
+// TAGS & TEMPLATES
+// ---------------------------------------------------------------------------
+
+model Tag {
+  id       String  @id @default(cuid())
+  tenantId String
+  tenant   Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name     String
+  color    String?
+
+  procedures ProcedureTag[]
+
+  @@unique([tenantId, name])
+  @@map("tags")
+}
+
+model ProcedureTag {
+  procedureId String
+  procedure   Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+  tagId       String
+  tag         Tag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([procedureId, tagId])
+  @@map("procedure_tags")
+}
+
+// ---------------------------------------------------------------------------
+// JOB ROLES  (Fase 3a — structured mansione/ruolo, orthogonal to permissions)
+// ---------------------------------------------------------------------------
+
+/// A job function/mansione (e.g. "Magazziniere", "Responsabile Onboarding")
+/// used purely to target which procedures are relevant to a person — never
+/// a permission grant. Do not check this in any canEdit or canView function;
+/// GlobalRole/DepartmentRole remain the only permission model.
+model JobRole {
+  id          String  @id @default(cuid())
+  tenantId    String
+  tenant      Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+
+  users      User[]
+  procedures ProcedureJobRole[]
+
+  @@unique([tenantId, name])
+  @@map("job_roles")
+}
+
+model ProcedureJobRole {
+  procedureId String
+  procedure   Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+  jobRoleId   String
+  jobRole     JobRole   @relation(fields: [jobRoleId], references: [id], onDelete: Cascade)
+
+  @@id([procedureId, jobRoleId])
+  @@map("procedure_job_roles")
+}
+
+/// Two generations of template coexist here rather than in separate models:
+/// the original single-document kind (`type`/`contentJson`, tenant-scoped,
+/// never wired to any route) and the block-tree kind added in Fase 5
+/// (`category`/`blockTemplate`, `tenantId` nullable so built-in templates
+/// like PRD/Analisi Funzionale can ship as tenantId: null = global). Same
+/// "evolve in place" move already used for Page/Block and Database/DatabaseRow.
+model Template {
+  id          String        @id @default(cuid())
+  tenantId    String? // null = global template available to every tenant
+  tenant      Tenant?       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String // "SOP Template", "PRD", ...
+  description String?
+  icon        String? // emoji, e.g. "📄"
+  createdAt   DateTime      @default(now())
+
+  // --- legacy single-document generation (unused by any route so far) ---
+  type        DocumentType?
+  contentJson Json?
+
+  // --- block-tree generation (Fase 5 Parte A) ---
+  category TemplateCategory?
+  /// Struttura di blocchi iniziale: array di { type, content, children? },
+  /// stesso formato del contenuto di Block ma senza id/pageId/sortOrder —
+  /// un albero "stampo" clonato in Block reali da POST /api/pages/from-template.
+  blockTemplate Json?
+  /// Se valorizzato, creare una pagina da questo template crea anche una
+  /// riga nel Database indicato (es. ogni PRD creato finisce anche nel
+  /// database "Product Documents" con colonna Stato).
+  trackingDatabaseId String?
+
+  pages Page[]
+
+  @@index([tenantId])
+  @@map("templates")
+}
+
+enum TemplateCategory {
+  PRD
+  FUNCTIONAL_ANALYSIS
+  USER_STORY
+  TECH_SPEC_RFC
+  MEETING_NOTES
+  CUSTOM
+}
+
+/// AI content proposal — the only mechanism through which the AI ever
+/// touches page content. It never writes a Block directly; a person must
+/// accept (PATCH /api/ai-suggestions/[id]) before proposedContent becomes
+/// real Block rows, and that acceptance is what lands in AuditLog.
+model AiSuggestion {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  pageId   String
+  page     Page   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  /// null per un blocco nuovo proposto (non ancora esistente);
+  /// valorizzato se la proposta è una modifica a un blocco esistente
+  targetBlockId String?
+
+  kind AiSuggestionKind
+  /// Contenuto proposto: array di { type, content, children? }, stesso
+  /// formato del blockTemplate di Template.
+  proposedContent Json
+  /// Per GAP_ANALYSIS: non blocchi da inserire, solo osservazioni testuali,
+  /// es. [{ "section": "Rischi", "issue": "..." }]
+  notes Json?
+
+  status        AiSuggestionStatus @default(PENDING)
+  requestedById String
+  createdAt     DateTime           @default(now())
+  decidedAt     DateTime?
+  decidedById   String?
+
+  @@index([pageId, status])
+  @@map("ai_suggestions")
+}
+
+enum AiSuggestionKind {
+  DRAFT_FROM_CONVERSATION
+  GAP_ANALYSIS
+  SECTION_COMPLETION
+  RELATED_DOCUMENT_LINK
+  EXECUTIVE_SUMMARY
+}
+
+enum AiSuggestionStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  PARTIALLY_ACCEPTED
+}
+
+// ---------------------------------------------------------------------------
+// WORKFLOW  (Draft -> Review -> Compliance Approval -> Management Approval -> Published -> Archived)
+// ---------------------------------------------------------------------------
+
+enum WorkflowStepStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SKIPPED
+}
+
+model WorkflowStep {
+  id           String             @id @default(cuid())
+  procedureId  String
+  procedure    Procedure          @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+  stage        DocumentStatus // which stage this step represents
+  assignedToId String?
+  assignedTo   User?              @relation(fields: [assignedToId], references: [id])
+  status       WorkflowStepStatus @default(PENDING)
+  comment      String?
+  decidedAt    DateTime?
+  createdAt    DateTime           @default(now())
+
+  @@index([procedureId])
+  @@map("workflow_steps")
+}
+
+// ---------------------------------------------------------------------------
+// READ & ACKNOWLEDGE
+// ---------------------------------------------------------------------------
+
+model Acknowledgment {
+  id             String    @id @default(cuid())
+  procedureId    String
+  procedure      Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versionNumber  Int // which version was acknowledged
+  acknowledgedAt DateTime  @default(now())
+  ipAddress      String?
+  /// Which surface the confirmation came through — the compliance
+  /// certificate (Fase 4) lists this per person. IN_APP for the
+  /// authenticated route, SLACK/GOOGLE_CHAT for a quick-confirm link
+  /// clicked from that channel's reminder.
+  channel        NotificationChannel @default(IN_APP)
+
+  @@unique([procedureId, userId, versionNumber])
+  @@index([procedureId])
+  @@map("acknowledgments")
+}
+
+/// A Read & Acknowledge campaign for one published version — created
+/// automatically when a Procedure with requiresAck=true reaches PUBLISHED
+/// (hook in lib/workflow/index.ts). A new version opens a new campaign;
+/// the old one's completedAt/reminders stay frozen as history.
+model AckCampaign {
+  id            String    @id @default(cuid())
+  tenantId      String
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  procedureId   String
+  procedure     Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+  versionNumber Int
+
+  /// Snapshot at creation time — not recomputed. Someone joining the
+  /// department mid-campaign isn't retroactively obligated; someone who
+  /// left stays counted (matches what a compliance certificate must show:
+  /// who was actually asked, not who happens to be around at export time).
+  targetUserIds String[]
+
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  reminders AckReminder[]
+
+  @@index([tenantId, procedureId])
+  @@map("ack_campaigns")
+}
+
+/// One row per reminder stage actually sent — the uniqueness constraint is
+/// what makes scripts/send-ack-reminders.ts safe to run more than once a day.
+model AckReminder {
+  id         String           @id @default(cuid())
+  campaignId String
+  campaign   AckCampaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  stage      AckReminderStage
+  sentAt     DateTime         @default(now())
+
+  @@unique([campaignId, stage])
+  @@map("ack_reminders")
+}
+
+enum AckReminderStage {
+  INITIAL
+  DAY_3
+  DAY_7
+  DAY_14
+}
+
+// ---------------------------------------------------------------------------
+// AUDIT TRAIL
+// ---------------------------------------------------------------------------
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  PUBLISH
+  ARCHIVE
+  DELETE
+  APPROVE
+  REJECT
+  ACKNOWLEDGE
+  PERMISSION_CHANGE
+  LOGIN
+  EXPORT
+}
+
+model AuditLog {
+  id          String      @id @default(cuid())
+  tenantId    String
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actorId     String
+  actor       User        @relation(fields: [actorId], references: [id])
+  action      AuditAction
+  entityType  String // "Procedure", "User", "Department", ...
+  entityId    String
+  procedureId String?
+  procedure   Procedure?  @relation(fields: [procedureId], references: [id])
+  metadata    Json? // diff / details
+  createdAt   DateTime    @default(now())
+
+  @@index([tenantId, entityType, entityId])
+  @@index([tenantId, createdAt])
+  @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// NOTIFICATIONS  (in-app + Slack + Google Chat)
+// ---------------------------------------------------------------------------
+
+enum NotificationType {
+  PUBLISHED
+  UPDATED
+  APPROVAL_REQUESTED
+  APPROVAL_DECIDED
+  REVIEW_DUE
+  MENTION
+  ACK_REQUIRED
+  ANNOUNCEMENT
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SLACK
+  GOOGLE_CHAT
+}
+
+model Notification {
+  id          String              @id @default(cuid())
+  tenantId    String
+  tenant      Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        NotificationType
+  title       String
+  body        String?
+  linkUrl     String?
+  channel     NotificationChannel @default(IN_APP)
+  readAt      DateTime?
+  deliveredAt DateTime?
+  createdAt   DateTime            @default(now())
+
+  @@index([userId, readAt])
+  @@map("notifications")
+}
+
+/// Per-user opt-in/out per channel and per event type.
+model NotificationPreference {
+  id              String  @id @default(cuid())
+  userId          String  @unique
+  user            User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailEnabled    Boolean @default(true)
+  slackEnabled    Boolean @default(true)
+  gchatEnabled    Boolean @default(false)
+  digestFrequency String  @default("daily") // "instant" | "daily" | "weekly"
+
+  @@map("notification_preferences")
+}
+
+model SlackUserIdentity {
+  id          String @id @default(cuid())
+  userId      String @unique
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slackUserId String
+  slackTeamId String
+
+  @@map("slack_user_identities")
+}
+
+model GoogleChatUserIdentity {
+  id                    String @id @default(cuid())
+  userId                String @unique
+  user                  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  googleUserId          String
+  googleWorkspaceDomain String
+
+  @@map("google_chat_user_identities")
+}
+
+// ---------------------------------------------------------------------------
+// INTEGRATIONS (tenant-level connection config)
+// ---------------------------------------------------------------------------
+
+enum IntegrationType {
+  SLACK
+  GOOGLE_CHAT
+  MICROSOFT_TEAMS
+  ENTRA_ID
+  SHAREPOINT
+  JIRA
+  SERVICENOW
+  FRESHDESK
+}
+
+model Integration {
+  id        String          @id @default(cuid())
+  tenantId  String
+  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  type      IntegrationType
+  isEnabled Boolean         @default(false)
+  config    Json // webhook URLs, OAuth tokens (encrypted at rest), default channel, etc.
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@unique([tenantId, type])
+  @@map("integrations")
+}
+
+// ---------------------------------------------------------------------------
+// ANNOUNCEMENTS (dashboard banner / company-wide messages)
+// ---------------------------------------------------------------------------
+
+model Announcement {
+  id        String    @id @default(cuid())
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  isPinned  Boolean   @default(false)
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([tenantId])
+  @@map("announcements")
+}
