@@ -3,16 +3,9 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Building2, Users, FolderTree, Plug, ShieldCheck, ChevronRight } from "lucide-react";
+import { Building2, Users, FolderTree, Plug, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-
-const ROLE_LABEL: Record<string, string> = {
-  ADMIN: "Amministratore",
-  COMPLIANCE_OFFICER: "Compliance Officer",
-  USER: "Utente",
-};
+import { TeamSection } from "@/components/settings/team-section";
 
 export default async function AdminSettingsPage() {
   const session = await getServerSession(authOptions);
@@ -20,12 +13,13 @@ export default async function AdminSettingsPage() {
   const globalRole = (session!.user as any).globalRole as string;
   if (globalRole !== "ADMIN") redirect("/dashboard");
 
-  const [tenant, users, departments, integrations] = await Promise.all([
+  const [tenant, users, departmentList, integrations] = await Promise.all([
     prisma.tenant.findUnique({ where: { id: tenantId } }),
     prisma.user.findMany({ where: { tenantId }, orderBy: { name: "asc" } }),
-    prisma.department.count({ where: { tenantId } }),
+    prisma.department.findMany({ where: { tenantId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.integration.findMany({ where: { tenantId } }),
   ]);
+  const departments = departmentList.length;
 
   return (
     <div className="mx-auto max-w-4xl space-y-8">
@@ -64,38 +58,7 @@ export default async function AdminSettingsPage() {
           <h2 className="font-display text-sm font-semibold uppercase tracking-wide">Team</h2>
         </CardHeader>
         <CardContent className="p-0">
-          <table className="w-full text-sm">
-            <tbody className="divide-y divide-border">
-              {users.map((u) => (
-                <tr key={u.id}>
-                  <td className="px-5 py-3">
-                    <div className="flex items-center gap-3">
-                      <Avatar className="h-8 w-8">
-                        <AvatarFallback className="bg-primary/10 text-primary">
-                          {u.name?.slice(0, 2).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="font-medium">{u.name}</p>
-                        <p className="text-xs text-muted-foreground">{u.email}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-5 py-3 text-right">
-                    <Badge variant="secondary" className="rounded-full">
-                      {u.globalRole === "ADMIN" && <ShieldCheck className="h-3 w-3" />}
-                      {ROLE_LABEL[u.globalRole] ?? u.globalRole}
-                    </Badge>
-                  </td>
-                  <td className="px-5 py-3 text-right">
-                    <span className={`text-xs ${u.isActive ? "text-[hsl(var(--stamp-green))]" : "text-muted-foreground"}`}>
-                      {u.isActive ? "Attivo" : "Disattivato"}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <TeamSection users={users} departments={departmentList} />
         </CardContent>
       </Card>
 

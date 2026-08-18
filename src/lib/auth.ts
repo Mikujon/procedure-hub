@@ -82,6 +82,7 @@ export const authOptions: NextAuthOptions = {
           tenantId: tenant.id,
           tenantSlug: tenant.slug,
           globalRole: user.globalRole,
+          mustChangePassword: user.mustChangePassword,
         } as any;
       },
     }),
@@ -94,12 +95,19 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         token.userId = (user as any).id;
         token.tenantId = (user as any).tenantId;
         token.tenantSlug = (user as any).tenantSlug;
         token.globalRole = (user as any).globalRole;
+        token.mustChangePassword = (user as any).mustChangePassword;
+      }
+      // Lets POST /api/me/password clear the flag without forcing a fresh
+      // sign-in — the client calls useSession().update({ mustChangePassword:
+      // false }) right after a successful change.
+      if (trigger === "update" && session && typeof session.mustChangePassword === "boolean") {
+        token.mustChangePassword = session.mustChangePassword;
       }
       return token;
     },
@@ -109,6 +117,7 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).tenantId = token.tenantId;
         (session.user as any).tenantSlug = token.tenantSlug;
         (session.user as any).globalRole = token.globalRole;
+        (session.user as any).mustChangePassword = token.mustChangePassword;
       }
       return session;
     },

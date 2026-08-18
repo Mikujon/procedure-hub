@@ -100,10 +100,14 @@ model User {
   manager   User?   @relation("managerOf", fields: [managerId], references: [id], onDelete: SetNull)
   reports   User[]  @relation("managerOf")
 
-  isActive    Boolean   @default(true)
-  lastLoginAt DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  isActive           Boolean   @default(true)
+  /// Set on admin-provisioned accounts (see POST /api/admin/users) so the
+  /// generated temporary password can never be the account's permanent one.
+  /// Cleared by POST /api/me/password. Checked in (app)/layout.tsx.
+  mustChangePassword Boolean   @default(false)
+  lastLoginAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   memberships        DepartmentMembership[]
   authoredProcedures Procedure[]             @relation("authoredProcedures")

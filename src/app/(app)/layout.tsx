@@ -14,6 +14,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const tenantId = (session.user as any).tenantId as string;
   const globalRole = (session.user as any).globalRole as string;
 
+  // Admin-provisioned accounts (POST /api/admin/users) start with a
+  // generated temporary password and must set a real one before touching
+  // anything else — checked here rather than per-route so no page can be
+  // reached by a direct link while it's still pending.
+  if ((session.user as any).mustChangePassword) redirect("/change-password");
+
   const [departments, canEdit] = await Promise.all([
     prisma.department.findMany({
       where: { tenantId },
