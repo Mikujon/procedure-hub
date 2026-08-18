@@ -32,6 +32,10 @@ export function middleware(req: NextRequest) {
   }
 
   const requestHeaders = new Headers(req.headers);
+  // Always strip first: a client that reaches this middleware on a hostname
+  // we don't resolve a slug from (raw IP, preview URL, unexpected Host header)
+  // must never have its own x-tenant-slug survive through to lib/tenant.ts.
+  requestHeaders.delete("x-tenant-slug");
   if (tenantSlug) {
     requestHeaders.set("x-tenant-slug", tenantSlug);
   }
