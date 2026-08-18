@@ -2,6 +2,7 @@ import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import AzureADProvider from "next-auth/providers/azure-ad";
 import bcrypt from "bcryptjs";
+import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -95,6 +96,79 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
+    /**
+     * Credentials already resolves tenant + user inside authorize() — this
+     * only does work for azure-ad. OAuth has no login form to type a tenant
+     * slug into, so it reuses the same signal every other server-side tenant
+     * resolution in the app trusts: the x-tenant-slug header middleware.ts
+     * sets from the hostname the request actually arrived on (the OAuth
+     * callback lands back on that same host). No slug, no matching Tenant
+     * row -> deny; there's nothing safe to attach the session to.
+     *
+     * First-time sign-in auto-provisions a baseline USER (no department
+     * membership, so no edit rights anywhere until an admin grants one) —
+     * this is what actually delivers on SSO's promise of zero-touch
+     * onboarding instead of just being a second login button in front of
+     * the same manual-provisioning gap as Credentials (SEC-05).
+     */
+    async signIn({ user, account }) {
+      if (account?.provider !== "azure-ad") return true;
+
+      const slug = headers().get("x-tenant-slug");
+      if (!slug) return false;
+      const tenant = await prisma.tenant.findUnique({ where: { slug } });
+      if (!tenant) return false;
+
+      const email = user.email?.toLowerCase();
+      if (!email) return false;
+
+      let appUser = await prisma.user.findUnique({
+        where: { tenantId_email: { tenantId: tenant.id, email } },
+      });
+
+      if (appUser && !appUser.isActive) return false;
+
+      if (!appUser) {
+        appUser = await prisma.user.create({
+          data: {
+            tenantId: tenant.id,
+            email,
+            name: user.name ?? email,
+            avatarUrl: user.image ?? undefined,
+            globalRole: "USER",
+            ssoProvider: "azure-ad",
+            ssoSubjectId: account.providerAccountId,
+            lastLoginAt: new Date(),
+          },
+        });
+        await prisma.auditLog.create({
+          data: {
+            tenantId: tenant.id,
+            actorId: appUser.id,
+            action: "CREATE",
+            entityType: "User",
+            entityId: appUser.id,
+            metadata: { via: "azure-ad-sso", email },
+          },
+        });
+      } else {
+        await prisma.user.update({
+          where: { id: appUser.id },
+          data: { ssoProvider: "azure-ad", ssoSubjectId: account.providerAccountId, lastLoginAt: new Date() },
+        });
+      }
+
+      // Picked up by jwt() below via the `user` param — same object
+      // reference NextAuth passes through both callbacks for this sign-in.
+      Object.assign(user, {
+        id: appUser.id,
+        tenantId: tenant.id,
+        tenantSlug: tenant.slug,
+        globalRole: appUser.globalRole,
+        mustChangePassword: appUser.mustChangePassword,
+      });
+      return true;
+    },
     async jwt({ token, user, trigger, session }) {
       if (user) {
         token.userId = (user as any).id;

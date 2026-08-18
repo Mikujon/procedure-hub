@@ -175,9 +175,15 @@ utenti, non per difficoltà tecnica.
    lo spazio DM e posta il messaggio è un TODO esplicito in `gchat.ts` —
    verificarne il comportamento contro un Workspace reale prima di
    completarla (solo la modalità webhook è end-to-end oggi).
-4. **Attivazione Microsoft Entra ID SSO**: `AzureADProvider` già presente in
-   `lib/auth.ts`, basta valorizzare `AZURE_AD_CLIENT_ID/SECRET/TENANT_ID` e
-   testare il consenso admin sul tenant Azure del cliente.
+4. **Attivazione Microsoft Entra ID SSO**: `AzureADProvider` è presente in
+   `lib/auth.ts` da tempo, ma fino al 18 ago 2026 non poteva funzionare
+   nemmeno a variabili valorizzate — mancava la risoluzione del tenant e
+   il match/creazione utente per un login OAuth (il `signIn` callback).
+   Aggiunto lo stesso giorno, insieme al bottone "Accedi con Microsoft" in
+   `/login` (condizionale su `AZURE_AD_CLIENT_ID`). Non ancora verificato
+   con un vero tenant Azure AD — vedi `docs/SSO-ENTRA-ID-SETUP.md` per i
+   passaggi di attivazione e i limiti noti (un solo tenant Azure supportato,
+   test locale non possibile su `localhost`).
 5. **Teams / SharePoint / Jira / Freshdesk / ServiceNow**: `Integration.type`
    li prevede già nello schema; ogni adapter segue lo stesso pattern di
    `lib/integrations/slack.ts`.
