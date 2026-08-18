@@ -1,15 +1,25 @@
-version: "3.9"
-
+# Credentials come from .env.docker (gitignored, not the app's .env — its
+# JSON-valued keys aren't valid for Compose's env-file parser). Generate one
+# with the three keys below before first run:
+#   POSTGRES_PASSWORD=...
+#   MEILI_MASTER_KEY=...
+#   REDIS_PASSWORD=...
+# Usage: docker compose --env-file .env.docker up -d
+#
+# Ports are bound to 127.0.0.1 only — reachable from this machine, not from
+# the local network. Widen the bind explicitly if a real shared/pilot
+# environment needs LAN access, and use a secrets manager instead of
+# .env.docker at that point.
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.docker}
       POSTGRES_DB: procedure_hub
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
@@ -17,18 +27,19 @@ services:
     image: getmeili/meilisearch:v1.10
     restart: unless-stopped
     environment:
-      MEILI_MASTER_KEY: "replace-with-a-master-key"
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?Set MEILI_MASTER_KEY in .env.docker}
       MEILI_ENV: "development"
     ports:
-      - "7700:7700"
+      - "127.0.0.1:7700:7700"
     volumes:
       - meili_data:/meili_data
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env.docker}"]
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
 
