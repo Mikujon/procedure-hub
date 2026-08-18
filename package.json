@@ -7,6 +7,7 @@
     "dev": "next dev",
     "collab": "tsx watch collab-server/index.ts",
     "worker:notifications": "tsx watch workers/notifications.ts",
+    "cron:dev": "tsx scripts/dev-cron.ts",
     "dev:all": "concurrently \"npm:dev\" \"npm:collab\" \"npm:worker:notifications\"",
     "build": "next build",
     "start": "next start",
