@@ -91,7 +91,8 @@ src/app/
     auth/[...nextauth]/         NextAuth
 
 src/components/
-  editor/procedure-editor.tsx   editor Tiptap con toolbar
+  blocks/block-editor.tsx       editor a blocchi stile Notion (motore corrente, vedi New plan/01)
+  editor/procedure-editor.tsx   editor Tiptap con toolbar (precedente al motore a blocchi)
   procedures/status-stamp.tsx   badge di stato workflow (elemento firma UI)
   procedures/workflow-panel.tsx azioni submit/approve/reject/archive
   procedures/acknowledge-button.tsx
@@ -113,9 +114,13 @@ prisma/seed.ts                  dati demo (dipartimenti, utenti, ruoli, una proc
 
 ## Cosa è già completo
 
+*Aggiornato 18 ago 2026 dopo un audit end-to-end — la versione precedente di
+questa lista era rimasta indietro rispetto al codice reale (vedi nota sotto
+la Roadmap).*
+
 Multi-tenancy · auth email/password · CRUD procedure con versioning ·
 gerarchia Department → Process → Procedure → Work Instruction · workflow di
-approvazione con audit trail · RBAC a due livelli · editor ricco · Read &
+approvazione con audit trail · RBAC a due livelli · Read &
 Acknowledge (con escalation multi-canale e certificato PDF) · notifiche
 in-app + Slack/Google Chat (modalità webhook) · ricerca full-text con filtri
 · dashboard KPI · tag/template · upload allegati reale (`POST /api/attachments`,
@@ -125,7 +130,29 @@ eliminazione tengono MeiliSearch coerente entro la stessa richiesta; backfill
 con `scripts/reindex.ts`) · cron reminder di revisione periodica
 (`GET /api/cron/review-reminders`, `vercel.json`, idempotente su
 `Procedure.reviewReminderSentAt`; equivalente manuale
-`scripts/send-review-reminders.ts`).
+`scripts/send-review-reminders.ts`) · rate limiting su login/AI/quick-confirm
+(`lib/rate-limit.ts`, fail-open su Redis irraggiungibile).
+
+Oltre questo, dal lavoro seguito in `New plan/` (vedi `New plan/00-INDEX.md`):
+motore a blocchi (editor stile Notion, `src/components/blocks/`, sostituisce
+l'editor Tiptap "semplice" descritto in versioni precedenti di questo file)
+· collaborazione realtime multi-utente (Hocuspocus/Yjs, `collab-server/`)
+· export PDF/DOCX/XLSX del contenuto procedura (`lib/export/`, bottone
+"Esporta" nella pagina procedura) · confronto/diff tra versioni
+(`procedures/[id]/versions/compare`) · AI: Q&A grounded con citazione fonte
+(`/ask`), Suggest Mode, executive summary, gap analysis (Gemini,
+`lib/ai/client.ts`) · gestione mansioni/ruoli (Job Role) · databases
+relazionali in-app (`src/components/databases/`) · OAuth "Sign in with
+Slack" per DM personalizzate (`/api/notifications/slack/oauth`,
+`SlackUserIdentity`) — funzionante lato codice, manca solo la registrazione
+dell'app su Slack (`SLACK_CLIENT_ID`/`SLACK_CLIENT_SECRET`) per attivarla.
+
+Parziale: autenticazione service-account Google Workspace
+(`lib/integrations/google-auth.ts`) — il token exchange OAuth2 è implementato,
+ma l'invio effettivo del messaggio come DM bot (creazione/ricerca dello
+spazio Chat) è deliberatamente lasciato un TODO in `gchat.ts` finché non è
+verificabile contro un Workspace reale (solo la modalità webhook è
+end-to-end oggi).
 
 ## Roadmap — prossimi task, in ordine di priorità
 
@@ -133,30 +160,43 @@ Quando l'utente chiede "cosa manca" o "continua lo sviluppo", proponi questi
 nell'ordine indicato — sono ordinati per impatto su un rollout reale a 200
 utenti, non per difficoltà tecnica.
 
-1. **OAuth Slack App / Google Chat App**: per DM personalizzate (oggi
-   funziona solo la modalità webhook, condivisa su un canale). Serve
-   registrare le app sulle rispettive piattaforme e implementare
-   `/api/notifications/slack/oauth` + equivalente Google, popolando
-   `SlackUserIdentity`/`GoogleChatUserIdentity`.
-2. **Attivazione Microsoft Entra ID SSO**: `AzureADProvider` già presente in
+1. **Provisioning utenti** (invito/creazione account, reset password): oggi
+   l'unico modo per creare un utente è `prisma/seed.ts` — non esiste una
+   route API di registrazione, invito o reset password. Blocco pratico
+   concreto per portare 200 dipendenti reali sul sistema. Emerso da un audit
+   di sicurezza/adozione, non era in questa lista in versioni precedenti.
+2. **Registrazione app Slack** (`SLACK_CLIENT_ID`/`SLACK_CLIENT_SECRET`):
+   il flusso OAuth "Sign in with Slack" per DM personalizzate è già
+   implementato lato codice (`/api/notifications/slack/oauth`,
+   `SlackUserIdentity`) — resta solo da registrare l'app su Slack e
+   verificare end-to-end.
+3. **Invio DM Google Chat**: il token exchange OAuth2 service-account esiste
+   (`lib/integrations/google-auth.ts`), ma la chiamata reale che trova/crea
+   lo spazio DM e posta il messaggio è un TODO esplicito in `gchat.ts` —
+   verificarne il comportamento contro un Workspace reale prima di
+   completarla (solo la modalità webhook è end-to-end oggi).
+4. **Attivazione Microsoft Entra ID SSO**: `AzureADProvider` già presente in
    `lib/auth.ts`, basta valorizzare `AZURE_AD_CLIENT_ID/SECRET/TENANT_ID` e
    testare il consenso admin sul tenant Azure del cliente.
-3. **Teams / SharePoint / Jira / Freshdesk / ServiceNow**: `Integration.type`
+5. **Teams / SharePoint / Jira / Freshdesk / ServiceNow**: `Integration.type`
    li prevede già nello schema; ogni adapter segue lo stesso pattern di
    `lib/integrations/slack.ts`.
-4. **Export PDF/Word/Excel** dalla pagina procedura (diverso dal certificato
-   PDF di Read & Acknowledge, già presente: qui si tratta di esportare il
-   contenuto stesso della procedura).
-5. **Diff view tra versioni**: `ProcedureVersion` ha già lo storico
-   completo, manca la UI che confronta due versioni selezionate.
-6. **Test automatici**: nessuno presente ancora. Partire dai flussi critici
-   (workflow di approvazione, permessi, versioning) con Vitest/Playwright.
+6. **Test automatici**: nessuno presente ancora (solo dipendenze in
+   `node_modules` hanno test propri). Partire dai flussi critici (workflow
+   di approvazione, permessi, versioning) con Vitest/Playwright.
 
-Nota: molto lavoro oltre questa lista è stato fatto seguendo `New plan/` (motore
-a blocchi, Database, ruoli/mansioni, AI Q&A e Suggest Mode — vedi
-`New plan/00-INDEX.md`) e non era ancora riflesso qui. Se una voce sopra
-risulta già implementata quando la leggi, verifica nel codice prima di
-riproporla: questa lista si disallinea facilmente da sessione a sessione.
+~~Export PDF/Word/Excel dalla pagina procedura~~ e ~~diff view tra
+versioni~~ risultavano qui come roadmap futura in versioni precedenti di
+questo file, ma sono già implementate e funzionanti (bottoni "Esporta" e
+"Confronta versioni selezionate" sulla pagina procedura) — rimosse dalla
+lista il 18 ago 2026 dopo verifica diretta in UI, non solo nel codice.
+
+Nota: questa lista si disallinea facilmente dal codice reale da sessione a
+sessione (vedi cronologia sopra). Se una voce risulta già implementata
+quando la leggi, verificalo in UI oltre che nel codice prima di riproporla —
+un bottone può esistere senza essere mai stato controllato che funzioni, e
+viceversa il codice può esistere senza essere raggiungibile da nessuna
+pagina.
 
 ## Direzione visiva (se estendi la UI)
 
