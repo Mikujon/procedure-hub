@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSession, signOut } from "next-auth/react";
-import { Bell, LogOut, Settings, BellRing } from "lucide-react";
+import { useTheme } from "next-themes";
+import { Bell, LogOut, Settings, BellRing, Sun, Moon, Monitor } from "lucide-react";
 import { CommandPalette } from "./command-palette";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,37 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+
+const THEME_CYCLE = ["light", "dark", "system"] as const;
+const THEME_ICON = { light: Sun, dark: Moon, system: Monitor };
+const THEME_LABEL = { light: "Chiaro", dark: "Scuro", system: "Sistema" };
+
+function ThemeToggle() {
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  const current = (theme as (typeof THEME_CYCLE)[number]) ?? "system";
+  const Icon = THEME_ICON[current];
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => {
+            const next = THEME_CYCLE[(THEME_CYCLE.indexOf(current) + 1) % THEME_CYCLE.length];
+            setTheme(next);
+          }}
+        >
+          {mounted ? <Icon className="h-5 w-5" /> : <span className="h-5 w-5" />}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>Tema: {THEME_LABEL[current]}</TooltipContent>
+    </Tooltip>
+  );
+}
 
 export function Topbar({ isAdmin = false }: { isAdmin?: boolean }) {
   const { data: session } = useSession();
@@ -43,6 +75,8 @@ export function Topbar({ isAdmin = false }: { isAdmin?: boolean }) {
       <CommandPalette />
 
       <div className="flex items-center gap-2">
+        <ThemeToggle />
+
         <Tooltip>
           <TooltipTrigger asChild>
             <Button asChild variant="ghost" size="icon" className="relative">

@@ -3,58 +3,91 @@
 @tailwind utilities;
 
 /*
- * Notion-inspired design tokens: clean white surfaces, warm near-black text,
- * whisper-subtle borders, and a single blue accent. Dark mode mirrors Notion's
- * charcoal (#191919 / #202020). The old "ink on cream editorial" palette was
- * replaced here — every page picks this up through the token classes.
+ * "Control Room" design tokens (roadmap #7, ago 2026): the operational
+ * nervous system of the company's procedures, not another Notion clone.
+ * Cool graphite/teal neutrals instead of the old warm Notion off-white,
+ * one signal accent (deep teal-cyan) distinct from every status color —
+ * --stamp-amber/--stamp-green/--destructive stay exactly as they were,
+ * on purpose: the brand accent must never double as a workflow-state
+ * color or the two meanings blur into each other. Supersedes the
+ * Notion-inspired palette this file carried previously.
  */
 :root {
-  --background: 0 0% 100%;          /* white */
-  --foreground: 40 6% 20%;          /* rgb(55,53,47) Notion text */
-  --card: 0 0% 100%;
-  --card-foreground: 40 6% 20%;
+  --background: 180 12% 97%;        /* cool "instrument paper", not cream */
+  --foreground: 200 15% 15%;
+  --card: 0 0% 100%;                /* pure white cards pop against the tinted bg */
+  --card-foreground: 200 15% 15%;
   --popover: 0 0% 100%;
-  --popover-foreground: 40 6% 20%;
-  --primary: 211 76% 51%;           /* #2383E2 Notion blue */
+  --popover-foreground: 200 15% 15%;
+  --primary: 186 78% 32%;           /* signal teal-cyan — the brand accent */
   --primary-foreground: 0 0% 100%;
-  --secondary: 40 14% 96%;
-  --secondary-foreground: 40 6% 20%;
-  --muted: 40 14% 96%;              /* sidebar/hover fill */
-  --muted-foreground: 40 4% 46%;
-  --accent: 40 14% 96%;
-  --accent-foreground: 40 6% 20%;
-  --border: 40 8% 90%;              /* subtle hairline */
-  --input: 40 8% 90%;
-  --ring: 211 76% 51%;
-  --destructive: 4 74% 49%;         /* Notion red */
+  --secondary: 180 10% 94%;
+  --secondary-foreground: 200 15% 15%;
+  --muted: 180 10% 94%;             /* sidebar/hover fill */
+  --muted-foreground: 195 8% 45%;
+  --accent: 180 10% 94%;
+  --accent-foreground: 200 15% 15%;
+  --border: 180 12% 88%;            /* subtle hairline */
+  --input: 180 12% 88%;
+  --ring: 186 78% 32%;
+  --destructive: 4 74% 49%;
   --destructive-foreground: 0 0% 100%;
-  --stamp-amber: 33 90% 45%;        /* approval amber */
-  --stamp-green: 145 55% 38%;       /* published green */
+  --stamp-amber: 33 90% 45%;        /* approval amber — workflow status, not brand */
+  --stamp-green: 145 55% 38%;       /* published green — workflow status, not brand */
   --radius: 0.5rem;
 }
 
 .dark {
-  --background: 0 0% 10%;           /* #191919 */
-  --foreground: 0 0% 90%;
-  --card: 0 0% 13%;                 /* #202020 */
-  --card-foreground: 0 0% 90%;
-  --popover: 0 0% 13%;
-  --popover-foreground: 0 0% 90%;
-  --primary: 211 80% 62%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 0 0% 17%;
-  --secondary-foreground: 0 0% 90%;
-  --muted: 0 0% 17%;
-  --muted-foreground: 0 0% 60%;
-  --accent: 0 0% 17%;
-  --accent-foreground: 0 0% 90%;
-  --border: 0 0% 22%;
-  --input: 0 0% 22%;
-  --ring: 211 80% 62%;
+  --background: 195 22% 7%;
+  --foreground: 170 15% 92%;
+  --card: 195 18% 10%;
+  --card-foreground: 170 15% 92%;
+  --popover: 195 18% 10%;
+  --popover-foreground: 170 15% 92%;
+  --primary: 178 55% 55%;           /* brighter cyan reads as "live" on dark */
+  --primary-foreground: 195 30% 10%; /* dark ink, not white — bright cyan needs dark text for contrast */
+  --secondary: 195 15% 15%;
+  --secondary-foreground: 170 15% 92%;
+  --muted: 195 15% 15%;
+  --muted-foreground: 170 10% 65%;
+  --accent: 195 15% 15%;
+  --accent-foreground: 170 15% 92%;
+  --border: 195 15% 20%;
+  --input: 195 15% 20%;
+  --ring: 178 55% 55%;
   --destructive: 4 70% 55%;
   --destructive-foreground: 0 0% 100%;
   --stamp-amber: 33 80% 58%;
   --stamp-green: 145 45% 52%;
+}
+
+/* ---- Motion primitives — each pairs with a real product event, not decoration ---- */
+@keyframes pill-settle {
+  0%, 60% { transform: scale(1); }
+  70% { transform: scale(1.12); }
+  82% { transform: scale(0.96); }
+  100% { transform: scale(1); }
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse-ring {
+  0% { transform: scale(0.9); opacity: 0.9; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+@keyframes scan-sweep {
+  0% { background-position: 120% 0; }
+  100% { background-position: -120% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 .font-display {

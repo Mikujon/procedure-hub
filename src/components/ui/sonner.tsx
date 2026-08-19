@@ -1,18 +1,15 @@
 "use client";
 
+import { useTheme } from "next-themes";
 import { Toaster as Sonner } from "sonner";
 
 type ToasterProps = React.ComponentProps<typeof Sonner>;
 
-/**
- * No dark-mode toggle exists anywhere in the app yet (the .dark tokens in
- * globals.css are defined but never applied) — hardcoded to "light" rather
- * than wired to next-themes (not a dependency here) until that toggle exists.
- */
 const Toaster = ({ ...props }: ToasterProps) => {
+  const { resolvedTheme } = useTheme();
   return (
     <Sonner
-      theme="light"
+      theme={(resolvedTheme as ToasterProps["theme"]) ?? "light"}
       className="toaster group"
       toastOptions={{
         classNames: {
