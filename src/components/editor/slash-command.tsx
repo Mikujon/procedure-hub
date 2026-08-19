@@ -82,7 +82,10 @@ const SlashMenu = forwardRef(function SlashMenu(
   }
 
   return (
-    <div ref={listRef} className="max-h-72 w-72 overflow-y-auto rounded-lg border border-border bg-card p-1.5 shadow-xl">
+    <div
+      ref={listRef}
+      className="max-h-72 w-72 origin-top overflow-y-auto rounded-lg border border-border bg-card p-1.5 opacity-0 shadow-xl animate-rise"
+    >
       {items.map((item, i) => {
         const Icon = item.icon;
         return (
@@ -99,7 +102,7 @@ const SlashMenu = forwardRef(function SlashMenu(
               <Icon className="h-4 w-4" />
             </span>
             <span className="min-w-0">
-              <span className="block truncate text-sm font-medium">{item.title}</span>
+              <span className="block truncate font-display text-sm font-medium">{item.title}</span>
               <span className="block truncate text-xs text-muted-foreground">{item.description}</span>
             </span>
           </button>

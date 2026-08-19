@@ -11,6 +11,7 @@ import { AiToolbarTrigger } from "@/components/ai/ai-toolbar-trigger";
 import { SuggestionPanel } from "@/components/ai/suggestion-panel";
 import { PromoteToProcedureDialog } from "@/components/pages/promote-to-procedure-dialog";
 import { Plus, Trash2, Check, Loader2, FileText, ChevronRight, Lock, ShieldCheck } from "lucide-react";
+import { colorForUser } from "@/lib/collab-colors";
 
 interface PageData {
   id: string;
@@ -125,7 +126,10 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
     );
   }
 
-  const collabUser = { name: session?.user?.name ?? "Utente", color: "#2F5D8C" };
+  const collabUser = {
+    name: session?.user?.name ?? "Utente",
+    color: colorForUser((session?.user as any)?.id ?? "anon"),
+  };
 
   return (
     <div className="mx-auto max-w-3xl">

@@ -133,9 +133,13 @@ body {
 .ProseMirror > * + * {
   margin-top: 0.6em;
 }
-.ProseMirror h1 { font-size: 1.875rem; font-weight: 700; letter-spacing: -0.02em; margin-top: 1.4em; }
-.ProseMirror h2 { font-size: 1.5rem; font-weight: 650; letter-spacing: -0.01em; margin-top: 1.2em; }
-.ProseMirror h3 { font-size: 1.25rem; font-weight: 600; margin-top: 1em; }
+/* No font-family override here before today meant every heading typed in
+   the legacy editor, and every published procedure rendered from it (see
+   .prose below — same content, read-only), silently fell back to the body
+   font. The content itself never looked like it belonged to this brand. */
+.ProseMirror h1 { font-family: var(--font-display); font-size: 1.875rem; font-weight: 700; letter-spacing: -0.02em; margin-top: 1.4em; }
+.ProseMirror h2 { font-family: var(--font-display); font-size: 1.5rem; font-weight: 650; letter-spacing: -0.01em; margin-top: 1.2em; }
+.ProseMirror h3 { font-family: var(--font-display); font-size: 1.25rem; font-weight: 600; margin-top: 1em; }
 .ProseMirror ul { list-style: disc; padding-left: 1.4em; }
 .ProseMirror ol { list-style: decimal; padding-left: 1.4em; }
 .ProseMirror blockquote {
@@ -187,5 +191,5 @@ body {
 }
 
 /* Prose blocks rendered read-only (procedure detail) share the editor look */
-.prose :where(h1, h2, h3) { letter-spacing: -0.01em; }
+.prose :where(h1, h2, h3) { font-family: var(--font-display); letter-spacing: -0.01em; }
 .prose :where(a) { color: hsl(var(--primary)); }

@@ -27,10 +27,13 @@ interface BlockRendererProps {
   dragHandleProps?: any;
 }
 
+// font-serif here (pre-Control Room) meant headings typed *inside* content
+// never picked up the brand's own display face — everything around the
+// editor looked redesigned, the content itself didn't.
 const HEADING_CLASS: Partial<Record<BlockType, string>> = {
-  HEADING_1: "font-serif text-2xl font-semibold",
-  HEADING_2: "font-serif text-xl font-semibold",
-  HEADING_3: "font-serif text-lg font-semibold",
+  HEADING_1: "font-display text-2xl font-semibold",
+  HEADING_2: "font-display text-xl font-semibold",
+  HEADING_3: "font-display text-lg font-semibold",
 };
 
 export function BlockRenderer(props: BlockRendererProps) {

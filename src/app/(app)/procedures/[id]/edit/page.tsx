@@ -6,14 +6,7 @@ import { useSession } from "next-auth/react";
 import { BlockEditor } from "@/components/blocks/block-editor";
 import type { ClientBlock } from "@/components/blocks/types";
 import { Save } from "lucide-react";
-
-const CURSOR_COLORS = ["#2F5D8C", "#B8863B", "#3E7A4F", "#8C4F2F", "#6B4F8C"];
-
-function colorForUser(id: string) {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
-  return CURSOR_COLORS[hash % CURSOR_COLORS.length];
-}
+import { colorForUser } from "@/lib/collab-colors";
 
 export default function EditProcedurePage({ params }: { params: { id: string } }) {
   const router = useRouter();
