@@ -67,6 +67,14 @@ l'audit trail, che sono requisiti hard del progetto (compliance ISO/GDPR).
    `lib/integrations/notify.ts`, mai chiamando `sendSlackNotification` /
    `sendGoogleChatNotification` direttamente da una route — il dispatcher
    gestisce fan-out, preferenze utente e la riga in-app.
+7. **Le automazioni (`src/lib/automations/`) non ottengono un'azione
+   "avanza/pubblica stato" generica** — solo `CHANGE_PROCEDURE_STATUS` verso
+   `ARCHIVED`. `resolveNextStage()` già pubblica automaticamente una
+   procedura non critica dopo l'approvazione management; una regola che
+   cambiasse stato in parallelo bypasserebbe uno stage di compliance senza
+   una decisione umana dietro. Se serve un'azione che cambia stato di
+   approvazione, va disegnata come cambio a `resolveNextStage()` stesso,
+   non come nuovo `AutomationActionType`.
 
 ## Mappa del codice
 
@@ -101,11 +109,12 @@ src/components/
 src/lib/
   permissions/index.ts          RBAC centralizzato — leggi prima di toccare permessi
   workflow/index.ts             pipeline di approvazione
+  automations/                  motore automazioni (trigger → condizione → azione), vedi regola 7
   integrations/notify.ts        dispatcher notifiche multi-canale
   integrations/slack.ts         adapter Slack (webhook + bot mode)
   integrations/gchat.ts         adapter Google Chat (webhook + bot mode)
   tenant.ts                     risoluzione tenant dalla request
-  auth.ts                       config NextAuth (Credentials + Azure AD)
+  auth.ts                       config NextAuth (Credentials + Azure AD, con signIn callback per il match/provisioning utenti SSO)
   search.ts                     client MeiliSearch
 
 prisma/schema.prisma            modello dati — leggi i commenti inline, spiegano il "perché"
@@ -114,9 +123,19 @@ prisma/seed.ts                  dati demo (dipartimenti, utenti, ruoli, una proc
 
 ## Cosa è già completo
 
-*Aggiornato 18 ago 2026 dopo un audit end-to-end — la versione precedente di
-questa lista era rimasta indietro rispetto al codice reale (vedi nota sotto
-la Roadmap).*
+*Aggiornato 19 ago 2026. Voce dopo voce, non fidarti di questa lista più
+del codice/UI reali — la cronologia sotto mostra quanto spesso questo file
+si è disallineato in passato.*
+
+**19 ago 2026**: provisioning utenti reale (`POST /api/admin/users`,
+password temporanea + `mustChangePassword`, non più solo `prisma/seed.ts`)
+· SSO Microsoft Entra ID funzionante lato codice (`signIn` callback in
+`lib/auth.ts` risolve tenant e fa match/provisioning, bottone "Accedi con
+Microsoft" condizionale) — non ancora verificato con un vero tenant Azure,
+vedi `docs/SSO-ENTRA-ID-SETUP.md` · nuova identità visiva "Control Room"
+(vedi sezione sotto) con dark mode reale attivabile (`next-themes`, toggle
+nel topbar) · motore di automazioni nei workflow (`src/lib/automations/`,
+regola architetturale 7) con UI admin in `/admin/automations`.
 
 Multi-tenancy · auth email/password · CRUD procedure con versioning ·
 gerarchia Department → Process → Procedure → Work Instruction · workflow di
@@ -160,11 +179,13 @@ Quando l'utente chiede "cosa manca" o "continua lo sviluppo", proponi questi
 nell'ordine indicato — sono ordinati per impatto su un rollout reale a 200
 utenti, non per difficoltà tecnica.
 
-1. **Provisioning utenti** (invito/creazione account, reset password): oggi
-   l'unico modo per creare un utente è `prisma/seed.ts` — non esiste una
-   route API di registrazione, invito o reset password. Blocco pratico
-   concreto per portare 200 dipendenti reali sul sistema. Emerso da un audit
-   di sicurezza/adozione, non era in questa lista in versioni precedenti.
+1. **Verifica SSO Entra ID con un vero tenant Azure**: il codice funziona
+   (verificato il 18-19 ago 2026: bottone condizionale, richiesta raggiunge
+   davvero gli endpoint Microsoft), ma il `signIn` callback che fa match/
+   provisioning dell'utente non è mai stato eseguito contro un login reale
+   — vedi `docs/SSO-ENTRA-ID-SETUP.md` per i passaggi e i limiti noti (un
+   solo tenant Azure supportato, test end-to-end non possibile su
+   `localhost`).
 2. **Registrazione app Slack** (`SLACK_CLIENT_ID`/`SLACK_CLIENT_SECRET`):
    il flusso OAuth "Sign in with Slack" per DM personalizzate è già
    implementato lato codice (`/api/notifications/slack/oauth`,
@@ -175,21 +196,18 @@ utenti, non per difficoltà tecnica.
    lo spazio DM e posta il messaggio è un TODO esplicito in `gchat.ts` —
    verificarne il comportamento contro un Workspace reale prima di
    completarla (solo la modalità webhook è end-to-end oggi).
-4. **Attivazione Microsoft Entra ID SSO**: `AzureADProvider` è presente in
-   `lib/auth.ts` da tempo, ma fino al 18 ago 2026 non poteva funzionare
-   nemmeno a variabili valorizzate — mancava la risoluzione del tenant e
-   il match/creazione utente per un login OAuth (il `signIn` callback).
-   Aggiunto lo stesso giorno, insieme al bottone "Accedi con Microsoft" in
-   `/login` (condizionale su `AZURE_AD_CLIENT_ID`). Non ancora verificato
-   con un vero tenant Azure AD — vedi `docs/SSO-ENTRA-ID-SETUP.md` per i
-   passaggi di attivazione e i limiti noti (un solo tenant Azure supportato,
-   test locale non possibile su `localhost`).
+4. **Migrare review-reminders/ack-escalation sul motore di automazioni**:
+   deliberatamente non fatto il 19 ago 2026 quando è stato introdotto il
+   motore — `lib/review-reminders.ts` e `lib/ack.ts` restano il percorso
+   reale finché il motore nuovo non ha girato un ciclo di produzione senza
+   incidenti (conseguenze di compliance reali se si rompono).
 5. **Teams / SharePoint / Jira / Freshdesk / ServiceNow**: `Integration.type`
    li prevede già nello schema; ogni adapter segue lo stesso pattern di
    `lib/integrations/slack.ts`.
 6. **Test automatici**: nessuno presente ancora (solo dipendenze in
    `node_modules` hanno test propri). Partire dai flussi critici (workflow
-   di approvazione, permessi, versioning) con Vitest/Playwright.
+   di approvazione, permessi, versioning, motore di automazioni) con
+   Vitest/Playwright.
 
 ~~Export PDF/Word/Excel dalla pagina procedura~~ e ~~diff view tra
 versioni~~ risultavano qui come roadmap futura in versioni precedenti di
@@ -206,17 +224,39 @@ pagina.
 
 ## Direzione visiva (se estendi la UI)
 
-**Attenzione**: questa sezione descriveva in origine una palette ink/paper
-mai più vera nel codice — vedi la nota storica in `docs/DESIGN.md`. Stato
-attuale: superfici bianche, blu segnale `#2383E2` per azioni primarie, ambra
-per stati in approvazione, verde per pubblicato — tutti come CSS variable in
-`src/app/globals.css`. Inter per tutto (titoli inclusi, `--font-display`
-mappa su Inter, non su un serif), IBM Plex Mono riservato ai codici procedura
-e al testo dentro `StatusStamp`. Componenti UI su shadcn/ui
-(`src/components/ui/`, sopra i primitivi Radix già in uso) — nuovi
-componenti passano da lì, non da markup Radix scritto a mano. Il
-`StatusStamp` resta l'unico elemento "audace" (timbro di approvazione);
-mantieni il resto disciplinato. Dettagli completi in `docs/DESIGN.md`.
+**Terza direzione visiva del progetto** (dopo ink/paper e Notion-blu — vedi
+nota storica in `docs/DESIGN.md`): **"Control Room"**, introdotta il 19 ago
+2026. Non un altro clone di Notion — il registro operativo delle procedure
+aziendali, letto come un pannello di controllo: precisione invece di
+decorazione, un solo colore-segnale distinto dai colori di stato.
+
+- **Colore**: superficie "carta fredda" (`--background: 180 12% 97%`, non
+  crema), accento teal-cyan `--primary: 186 78% 32%` — **mai** riusato come
+  colore di stato. Ambra/verde restano gli stati di workflow
+  (`--stamp-amber`/`--stamp-green`, invariati), rosso resta `--destructive`.
+  Dark mode reale e attivabile (non più solo teorico): `next-themes`,
+  toggle chiaro/scuro/sistema nel topbar (`ThemeToggle` in
+  `components/layout/topbar.tsx`).
+- **Tipografia**: Archivo per i titoli (`--font-display`, sostituisce
+  Inter — carattere tecnico/condensato, cross-platform a differenza di
+  Bahnschrift usato nel concept pitch), Inter per il corpo, IBM Plex Mono
+  per codici procedura e `StatusStamp` (invariato).
+- **Movimento**: quattro primitive in `globals.css`
+  (`pill-settle`/`rise`/`pulse-ring`/`scan-sweep`, esposte anche come
+  animazioni Tailwind), ognuna legata a un evento reale del prodotto
+  (cambio di stato, liste che compaiono in sequenza, contatori KPI,
+  ricerca in corso) — non decorazione sparsa. Tutte rispettano
+  `prefers-reduced-motion`. Applicate finora a chrome (sidebar/topbar),
+  `StatusStamp`, dashboard, KPI admin, pagina procedura, ricerca — non
+  ancora a tutte le 17 pagine, per scelta deliberata (un tocco orchestrato
+  batte cento effetti sparsi), non per dimenticanza.
+- Componenti UI restano su shadcn/ui (`src/components/ui/`) — nuovi
+  componenti passano da lì. `StatusStamp` resta l'unico elemento "audace"
+  (timbro di approvazione, ora con un piccolo rimbalzo all'ingresso);
+  mantieni il resto disciplinato.
+
+Dettagli completi (inclusa la palette/mockup originale del concept) in
+`docs/DESIGN.md`.
 
 ## Riferimenti
 
