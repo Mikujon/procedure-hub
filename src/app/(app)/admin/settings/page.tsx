@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Building2, Users, FolderTree, Plug, ChevronRight } from "lucide-react";
+import { Building2, Users, FolderTree, Plug, ChevronRight, Zap } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { TeamSection } from "@/components/settings/team-section";
 
@@ -15,7 +15,7 @@ export default async function AdminSettingsPage() {
 
   const [tenant, users, departmentList, integrations] = await Promise.all([
     prisma.tenant.findUnique({ where: { id: tenantId } }),
-    prisma.user.findMany({ where: { tenantId }, orderBy: { name: "asc" } }),
+    prisma.user.findMany({ where: { tenantId, isSystem: false }, orderBy: { name: "asc" } }),
     prisma.department.findMany({ where: { tenantId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.integration.findMany({ where: { tenantId } }),
   ]);
@@ -72,6 +72,20 @@ export default async function AdminSettingsPage() {
           <div>
             <p className="font-medium">Integrazioni & notifiche</p>
             <p className="text-sm text-muted-foreground">Slack, Google Chat, e canali di notifica.</p>
+          </div>
+        </div>
+        <ChevronRight className="h-5 w-5 text-muted-foreground" />
+      </Link>
+
+      <Link
+        href="/admin/automations"
+        className="flex items-center justify-between rounded-lg border border-border bg-card px-5 py-4 shadow-sm hover:bg-muted"
+      >
+        <div className="flex items-center gap-3">
+          <Zap className="h-5 w-5 text-primary" />
+          <div>
+            <p className="font-medium">Automazioni</p>
+            <p className="text-sm text-muted-foreground">Regole che notificano o archiviano procedure senza intervento manuale.</p>
           </div>
         </div>
         <ChevronRight className="h-5 w-5 text-muted-foreground" />

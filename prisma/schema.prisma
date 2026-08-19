@@ -44,6 +44,8 @@ model Tenant {
   jobRoles      JobRole[]
   aiSuggestions AiSuggestion[]
   ackCampaigns  AckCampaign[]
+  automationRules AutomationRule[]
+  automationRuns  AutomationRun[]
 
   @@map("tenants")
 }
@@ -105,6 +107,12 @@ model User {
   /// generated temporary password can never be the account's permanent one.
   /// Cleared by POST /api/me/password. Checked in (app)/layout.tsx.
   mustChangePassword Boolean   @default(false)
+  /// One synthetic row per tenant, created lazily by getSystemActorId() —
+  /// the AuditLog.actorId a workflow automation attributes its own actions
+  /// to, since that FK is non-nullable and automations act without a human
+  /// in the loop. isActive:false keeps it out of notification audiences
+  /// (resolveDefaultRecipients already filters isActive:true) for free.
+  isSystem           Boolean   @default(false)
   lastLoginAt        DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
@@ -125,6 +133,7 @@ model User {
   createdPages       Page[]                  @relation("createdPages")
   ownedPages         Page[]                  @relation("ownedPages")
   createdDatabases   Database[]              @relation("createdDatabases")
+  createdAutomationRules AutomationRule[]    @relation("createdAutomationRules")
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -977,6 +986,86 @@ model AuditLog {
 }
 
 // ---------------------------------------------------------------------------
+// WORKFLOW AUTOMATIONS
+//
+// Admin-authored trigger -> condition -> action rules, additive to (not a
+// replacement for) the hand-coded review-reminder and ack-escalation logic
+// in lib/review-reminders.ts and lib/ack.ts — those stay exactly as they
+// are; migrating them onto this engine is a deliberately separate, later
+// piece of work. See src/lib/automations/engine.ts.
+// ---------------------------------------------------------------------------
+
+enum AutomationTriggerType {
+  PROCEDURE_STATUS_ENTERED // event-driven, hooked from lib/workflow/index.ts
+  REVIEW_DATE_DUE // time-based, generalizes lib/review-reminders.ts
+  ACK_CAMPAIGN_AGE // time-based, generalizes scripts/send-ack-reminders.ts
+}
+
+enum AutomationActionType {
+  SEND_NOTIFICATION // wraps notifyEvent() — the only already-audited notification path
+  CHANGE_PROCEDURE_STATUS // restricted to ARCHIVED only, see src/lib/automations/actions.ts
+}
+
+model AutomationRule {
+  id          String  @id @default(cuid())
+  tenantId    String
+  tenant      Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  isEnabled   Boolean @default(true)
+
+  triggerType   AutomationTriggerType
+  /// Shape validated per triggerType by a zod discriminated union
+  /// (src/lib/automations/types.ts) — same Json-config precedent already
+  /// used by Integration.config below, not a normalized query builder.
+  triggerConfig Json
+
+  /// Small fixed guard shape, e.g. { isCriticalEquals: false, tagNameNotIn: [...] }
+  /// — literally the one condition resolveNextStage() already hardcodes,
+  /// made admin-configurable. Not a generic condition builder.
+  conditions Json?
+
+  actionType   AutomationActionType
+  actionConfig Json
+
+  createdById String
+  createdBy   User     @relation("createdAutomationRules", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  runs AutomationRun[]
+
+  @@index([tenantId, triggerType, isEnabled])
+  @@map("automation_rules")
+}
+
+/// Idempotency ledger + run history. @@unique(ruleId, entityId, fireKey)
+/// generalizes AckReminder's @@unique(campaignId, stage) pattern — a
+/// double-fire becomes a caught constraint violation instead of a silent
+/// logic bug, for any rule/entity, not just ack reminders.
+model AutomationRun {
+  id         String         @id @default(cuid())
+  ruleId     String
+  rule       AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  tenantId   String
+  tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  entityType String // "Procedure" | "AckCampaign"
+  entityId   String
+  /// Dedup key, meaning depends on triggerType: REVIEW_DATE_DUE uses
+  /// procedure.nextReviewDate.toISOString(); ACK_CAMPAIGN_AGE uses the
+  /// day-threshold from actionConfig; PROCEDURE_STATUS_ENTERED uses a
+  /// fresh id every time (history only, not a dedup key — see engine.ts).
+  fireKey String
+  firedAt DateTime @default(now())
+  status  String // "SUCCESS" | "FAILED"
+  error   String?
+
+  @@unique([ruleId, entityId, fireKey])
+  @@index([tenantId, ruleId])
+  @@map("automation_runs")
+}
+
+// ---------------------------------------------------------------------------
 // NOTIFICATIONS  (in-app + Slack + Google Chat)
 // ---------------------------------------------------------------------------
 
@@ -989,6 +1078,7 @@ enum NotificationType {
   MENTION
   ACK_REQUIRED
   ANNOUNCEMENT
+  AUTOMATION
 }
 
 enum NotificationChannel {

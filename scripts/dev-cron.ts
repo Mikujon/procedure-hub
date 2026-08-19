@@ -1,4 +1,5 @@
 import { sendReviewReminders } from "../src/lib/review-reminders";
+import { runTimeBasedAutomations } from "../src/lib/automations/engine";
 import { prisma } from "../src/lib/prisma";
 
 /**
@@ -23,11 +24,18 @@ async function tick() {
     const { checked, sent } = await sendReviewReminders();
     console.log(`[dev-cron] ${new Date().toISOString()} — checked ${checked} overdue procedure(s), sent ${sent} reminder(s).`);
   } catch (err) {
-    console.error("[dev-cron] tick failed:", err);
+    console.error("[dev-cron] review-reminders tick failed:", err);
+  }
+
+  try {
+    const { rulesChecked, fired } = await runTimeBasedAutomations();
+    console.log(`[dev-cron] ${new Date().toISOString()} — checked ${rulesChecked} automation rule(s), fired ${fired}.`);
+  } catch (err) {
+    console.error("[dev-cron] automations tick failed:", err);
   }
 }
 
-console.log(`[dev-cron] review-reminders loop started, every ${INTERVAL_MS / 60000} min. Ctrl+C to stop.`);
+console.log(`[dev-cron] review-reminders + automations loop started, every ${INTERVAL_MS / 60000} min. Ctrl+C to stop.`);
 tick();
 const timer = setInterval(tick, INTERVAL_MS);
 

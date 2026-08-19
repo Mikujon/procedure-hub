@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { notifyEvent } from "@/lib/integrations/notify";
 import { indexProcedure, removeFromIndex, buildSearchDocument, stripHtml } from "@/lib/search";
 import { startAckCampaign } from "@/lib/ack";
+import { runStatusAutomations } from "@/lib/automations/engine";
 
 /**
  * Approval pipeline:
@@ -59,6 +60,8 @@ export async function submitForReview(procedureId: string, actorId: string) {
     title: `"${procedure.title}" awaiting ${nextStage.replace("_", " ").toLowerCase()}`,
   });
 
+  await runStatusAutomations(procedure.tenantId, procedureId, nextStage);
+
   return nextStage;
 }
 
@@ -89,6 +92,7 @@ export async function decideWorkflowStep(
       procedureId: step.procedureId,
       title: `"${step.procedure.title}" was rejected at ${step.stage.replace("_", " ").toLowerCase()}`,
     });
+    await runStatusAutomations(step.procedure.tenantId, step.procedureId, "REJECTED");
     return "REJECTED" as const;
   }
 
@@ -117,6 +121,8 @@ export async function decideWorkflowStep(
         ? `"${step.procedure.title}" has been published`
         : `"${step.procedure.title}" awaiting ${nextStage.replace("_", " ").toLowerCase()}`,
   });
+
+  await runStatusAutomations(step.procedure.tenantId, step.procedureId, nextStage);
 
   // The search index (and any AI retrieval built on it) filters on
   // status = PUBLISHED — reaching PUBLISHED only via a content save
@@ -166,7 +172,11 @@ async function resolveNextStage(
   return PIPELINE[nextIndex] ?? "PUBLISHED";
 }
 
-export async function archiveProcedure(procedureId: string, actorId: string) {
+export async function archiveProcedure(
+  procedureId: string,
+  actorId: string,
+  opts?: { skipAutomations?: boolean }
+) {
   const procedure = await prisma.procedure.findUniqueOrThrow({ where: { id: procedureId } });
   await prisma.procedure.update({
     where: { id: procedureId },
@@ -186,4 +196,12 @@ export async function archiveProcedure(procedureId: string, actorId: string) {
   // archives a procedure through this function (not just the one route
   // today) must not be able to forget to pull it out of search/AI retrieval.
   await removeFromIndex(procedureId, procedure.tenantId);
+
+  // skipAutomations: true when this call itself came from an automation's
+  // CHANGE_PROCEDURE_STATUS action (src/lib/automations/actions.ts) — without
+  // this guard, a rule that archives on ARCHIVED would re-fire itself and
+  // every other ARCHIVED-triggered rule on every archive, forever.
+  if (!opts?.skipAutomations) {
+    await runStatusAutomations(procedure.tenantId, procedureId, "ARCHIVED");
+  }
 }
