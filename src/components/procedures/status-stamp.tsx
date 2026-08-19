@@ -24,10 +24,15 @@ const STATUS_CONFIG: Record<
 export function StatusStamp({ status, className }: { status: string; className?: string }) {
   const config = STATUS_CONFIG[status] ?? STATUS_CONFIG.DRAFT;
   return (
+    // key={status}: React remounts this element whenever the status prop
+    // changes across re-renders of the same StatusStamp instance, which is
+    // what replays the settle animation on an approve/reject/publish rather
+    // than just once on first paint.
     <span
+      key={status}
       className={cn(
         "inline-flex items-center rounded-sm border-2 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-widest",
-        "font-mono select-none",
+        "font-mono select-none animate-pill-settle",
         config.className,
         className
       )}

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Search, FileText, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { ScanBar } from "@/components/ui/scan-bar";
 
 interface SearchHit {
   id: string;
@@ -48,7 +49,8 @@ export function GlobalSearch() {
 
   return (
     <div ref={containerRef} className="relative w-full max-w-md">
-      <div className="flex items-center gap-2 rounded-sm border border-border bg-background px-3 py-2">
+      <div className="relative flex items-center gap-2 overflow-hidden rounded-sm border border-border bg-background px-3 py-2">
+        {loading && <ScanBar />}
         <Search className="h-4 w-4 text-muted-foreground" />
         <input
           value={query}

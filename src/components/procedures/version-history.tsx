@@ -36,8 +36,12 @@ export function VersionHistory({ procedureId, versions }: { procedureId: string;
   return (
     <div className="space-y-3">
       <ul className="space-y-2">
-        {versions.map((v) => (
-          <li key={v.id} className="flex items-start gap-2 text-xs">
+        {versions.map((v, i) => (
+          <li
+            key={v.id}
+            className="flex items-start gap-2 text-xs opacity-0 animate-rise"
+            style={{ animationDelay: `${i * 60}ms` }}
+          >
             {versions.length > 1 && (
               <input
                 type="checkbox"

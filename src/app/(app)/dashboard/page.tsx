@@ -85,9 +85,10 @@ export default async function DashboardPage() {
             <CardTitle className="text-lg">Aggiornate di recente</CardTitle>
           </CardHeader>
           <CardContent className="divide-y divide-border p-0">
-            {recent.map((p) => (
+            {recent.map((p, i) => (
               <ProcedureListRow
                 key={p.id}
+                index={i}
                 id={p.id}
                 title={p.title}
                 code={p.code}
@@ -112,9 +113,10 @@ export default async function DashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="divide-y divide-border p-0">
-              {favorites.map((f) => (
+              {favorites.map((f, i) => (
                 <ProcedureListRow
                   key={f.id}
+                  index={i}
                   id={f.procedure.id}
                   title={f.procedure.title}
                   meta={f.procedure.department.name}
@@ -133,9 +135,10 @@ export default async function DashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="divide-y divide-border p-0">
-              {dueForReview.map((p) => (
+              {dueForReview.map((p, i) => (
                 <ProcedureListRow
                   key={p.id}
+                  index={i}
                   id={p.id}
                   title={p.title}
                   meta={`Revisione entro ${p.nextReviewDate ? formatDate(p.nextReviewDate) : "—"}`}
@@ -158,9 +161,10 @@ export default async function DashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="divide-y divide-border p-0">
-            {forMyRole.map((p) => (
+            {forMyRole.map((p, i) => (
               <ProcedureListRow
                 key={p.id}
+                index={i}
                 id={p.id}
                 title={p.title}
                 code={p.code}

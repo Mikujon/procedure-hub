@@ -6,6 +6,7 @@ import {
   Search, FileText, LayoutDashboard, Star, Bell, FilePlus2, ShieldCheck, Loader2, CornerDownLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ScanBar } from "@/components/ui/scan-bar";
 
 interface Hit {
   id: string;
@@ -136,7 +137,8 @@ export function CommandPalette({ trigger }: { trigger?: (open: () => void) => Re
             className="w-full max-w-xl overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center gap-3 border-b border-border px-4">
+            <div className="relative flex items-center gap-3 overflow-hidden border-b border-border px-4">
+              {loading && <ScanBar />}
               <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
               <input
                 ref={inputRef}

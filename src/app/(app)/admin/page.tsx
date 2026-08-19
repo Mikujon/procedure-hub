@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { FileText, Users, AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CountUp } from "@/components/ui/count-up";
 
 interface KpiData {
   totalProcedures: number;
@@ -139,7 +140,7 @@ function StatCard({
             accent === "warning" ? "text-[hsl(var(--stamp-amber))]" : accent === "success" ? "text-[hsl(var(--stamp-green))]" : "text-primary"
           }`}
         />
-        <p className="font-display text-2xl font-semibold">{value}</p>
+        <p className="font-display text-2xl font-semibold"><CountUp value={value} /></p>
         <p className="text-xs text-muted-foreground">{label}</p>
       </CardContent>
     </Card>
