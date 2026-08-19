@@ -84,7 +84,7 @@ export function AttachmentsPanel({
   }
 
   return (
-    <Card>
+    <Card className="opacity-0 animate-rise">
       <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
           <Paperclip className="h-4 w-4" /> Allegati
@@ -101,8 +101,12 @@ export function AttachmentsPanel({
       {attachments.length > 0 && (
         <CardContent className="pt-0">
           <ul className="space-y-1.5">
-            {attachments.map((a) => (
-              <li key={a.id} className="flex items-center gap-2 text-sm">
+            {attachments.map((a, i) => (
+              <li
+                key={a.id}
+                className="flex items-center gap-2 text-sm opacity-0 animate-rise"
+                style={{ animationDelay: `${i * 60}ms` }}
+              >
                 <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <a
                   href={`/api/attachments/${a.id}/download`}

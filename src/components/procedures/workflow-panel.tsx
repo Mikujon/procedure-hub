@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, XCircle, Send, Archive } from "lucide-react";
+import { CheckCircle2, XCircle, Send, Archive, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -59,14 +59,14 @@ export function WorkflowPanel({
   }
 
   return (
-    <Card>
+    <Card className="opacity-0 animate-rise">
       <CardHeader className="pb-3">
         <CardTitle className="text-sm">Flusso di approvazione</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 pt-0">
         {status === "DRAFT" && canSubmit && (
           <Button disabled={busy} onClick={submit} className="w-full">
-            <Send className="h-4 w-4" /> Invia in revisione
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Invia in revisione
           </Button>
         )}
 
@@ -87,10 +87,10 @@ export function WorkflowPanel({
                 onClick={() => decide("APPROVED")}
                 className="flex-1 bg-[hsl(var(--stamp-green))] text-white hover:bg-[hsl(var(--stamp-green))]/90"
               >
-                <CheckCircle2 className="h-4 w-4" /> Approva
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Approva
               </Button>
               <Button disabled={busy} onClick={() => decide("REJECTED")} variant="destructive" className="flex-1">
-                <XCircle className="h-4 w-4" /> Rifiuta
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />} Rifiuta
               </Button>
             </div>
           </div>
@@ -98,7 +98,7 @@ export function WorkflowPanel({
 
         {status === "PUBLISHED" && canArchive && (
           <Button disabled={busy} onClick={archive} variant="outline" className="w-full">
-            <Archive className="h-4 w-4" /> Archivia
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Archive className="h-4 w-4" />} Archivia
           </Button>
         )}
 
