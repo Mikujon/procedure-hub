@@ -7,6 +7,7 @@ const TRIGGER_OPTIONS = [
   { value: "PROCEDURE_STATUS_ENTERED", label: "Una procedura entra in uno stato" },
   { value: "REVIEW_DATE_DUE", label: "Arriva la data di revisione" },
   { value: "ACK_CAMPAIGN_AGE", label: "Una campagna di conferma lettura è aperta da N giorni" },
+  { value: "ACK_CAMPAIGN_COMPLETED", label: "Una procedura è stata letta e confermata da tutti" },
 ];
 
 const STATUS_OPTIONS = [

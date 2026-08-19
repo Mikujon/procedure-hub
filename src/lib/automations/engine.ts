@@ -77,6 +77,32 @@ export async function runStatusAutomations(tenantId: string, procedureId: string
 }
 
 /**
+ * Event-driven entry point — called from lib/ack.ts's maybeCompleteCampaign
+ * right after it notifies the procedure owner that 100% of the target
+ * audience has acknowledged. That owner-only notification stays as-is
+ * (unconditional, not admin-configurable); this is the hook that lets an
+ * admin ALSO notify the department or the whole tenant when that happens,
+ * without touching lib/ack.ts's own logic.
+ */
+export async function runAckCompletionAutomations(tenantId: string, procedureId: string) {
+  const rules = await prisma.automationRule.findMany({
+    where: { tenantId, isEnabled: true, triggerType: "ACK_CAMPAIGN_COMPLETED" },
+  });
+  if (rules.length === 0) return;
+
+  const procedure = await prisma.procedure.findUnique({
+    where: { id: procedureId },
+    select: { id: true, isCritical: true },
+  });
+  if (!procedure) return;
+
+  for (const rule of rules) {
+    if (!(await matchesConditions(procedure, rule.conditions as AutomationConditions))) continue;
+    await fireRule(rule, "Procedure", procedureId, crypto.randomUUID(), procedureId);
+  }
+}
+
+/**
  * Time-based entry point — GET /api/cron/automations (Vercel Cron in
  * production) and the local dev-cron loop both call this. Scans across
  * every tenant (each subsequent query is scoped by rule.tenantId, per the

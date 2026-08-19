@@ -20,6 +20,7 @@ const TRIGGER_LABEL: Record<string, string> = {
   PROCEDURE_STATUS_ENTERED: "Cambio di stato",
   REVIEW_DATE_DUE: "Data di revisione",
   ACK_CAMPAIGN_AGE: "Età campagna conferma lettura",
+  ACK_CAMPAIGN_COMPLETED: "Lettura confermata al 100%",
 };
 const ACTION_LABEL: Record<string, string> = {
   SEND_NOTIFICATION: "Invia notifica",

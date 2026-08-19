@@ -999,6 +999,7 @@ enum AutomationTriggerType {
   PROCEDURE_STATUS_ENTERED // event-driven, hooked from lib/workflow/index.ts
   REVIEW_DATE_DUE // time-based, generalizes lib/review-reminders.ts
   ACK_CAMPAIGN_AGE // time-based, generalizes scripts/send-ack-reminders.ts
+  ACK_CAMPAIGN_COMPLETED // event-driven, hooked from lib/ack.ts's maybeCompleteCampaign — "everyone has read this" as a rule an admin can point at the whole team, not just the owner
 }
 
 enum AutomationActionType {

@@ -1,6 +1,7 @@
 import type { NotificationChannel } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { notifyEvent, resolveDefaultRecipients } from "@/lib/integrations/notify";
+import { runAckCompletionAutomations } from "@/lib/automations/engine";
 
 /**
  * Opens a Read & Acknowledge campaign for a procedure's current version and
@@ -105,4 +106,9 @@ async function maybeCompleteCampaign(procedureId: string, versionNumber: number)
       userIds: [procedure.ownerId],
     });
   }
+
+  // Owner notification above is unconditional and always was. This is the
+  // admin-configurable extra layer: a rule can broadcast "100% read" to a
+  // whole department or the tenant, not just the one owner.
+  await runAckCompletionAutomations(campaign.tenantId, procedureId);
 }

@@ -29,6 +29,8 @@ export const ackCampaignAgeConfigSchema = z.object({
   days: z.number().int().min(1).max(60),
 });
 
+export const ackCampaignCompletedConfigSchema = z.object({}).strict();
+
 export function parseTriggerConfig(triggerType: string, config: unknown) {
   switch (triggerType) {
     case "PROCEDURE_STATUS_ENTERED":
@@ -37,6 +39,8 @@ export function parseTriggerConfig(triggerType: string, config: unknown) {
       return reviewDateDueConfigSchema.parse(config);
     case "ACK_CAMPAIGN_AGE":
       return ackCampaignAgeConfigSchema.parse(config);
+    case "ACK_CAMPAIGN_COMPLETED":
+      return ackCampaignCompletedConfigSchema.parse(config);
     default:
       throw new Error(`Unknown triggerType "${triggerType}"`);
   }
@@ -88,7 +92,7 @@ export const createAutomationRuleSchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().max(1000).optional(),
   isEnabled: z.boolean().optional(),
-  triggerType: z.enum(["PROCEDURE_STATUS_ENTERED", "REVIEW_DATE_DUE", "ACK_CAMPAIGN_AGE"]),
+  triggerType: z.enum(["PROCEDURE_STATUS_ENTERED", "REVIEW_DATE_DUE", "ACK_CAMPAIGN_AGE", "ACK_CAMPAIGN_COMPLETED"]),
   triggerConfig: z.record(z.any()),
   conditions: conditionsSchema,
   actionType: z.enum(["SEND_NOTIFICATION", "CHANGE_PROCEDURE_STATUS"]),
