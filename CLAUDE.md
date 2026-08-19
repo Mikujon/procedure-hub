@@ -222,6 +222,14 @@ un bottone può esistere senza essere mai stato controllato che funzioni, e
 viceversa il codice può esistere senza essere raggiungibile da nessuna
 pagina.
 
+**Piano attivo in esecuzione** (19 ago 2026): identità visiva in
+profondità → gap feature vs Notion/leader → automazioni più ricche, in
+questo ordine. Stato dettagliato (cosa è già fatto e verificato, cosa
+resta, file per file) in
+[`docs/REDESIGN-FEATURE-AUTOMATION-PLAN.md`](docs/REDESIGN-FEATURE-AUTOMATION-PLAN.md)
+— se riprendi questo lavoro (anche in una sessione/licenza diversa), parti
+da lì invece che da questa lista generale.
+
 ## Direzione visiva (se estendi la UI)
 
 **Terza direzione visiva del progetto** (dopo ink/paper e Notion-blu — vedi
@@ -262,4 +270,7 @@ Dettagli completi (inclusa la palette/mockup originale del concept) in
 
 - `docs/ARCHITECTURE.md` — spiegazione estesa delle scelte architetturali
 - `docs/DESIGN.md` — rationale della direzione visiva
+- `docs/REDESIGN-FEATURE-AUTOMATION-PLAN.md` — piano attivo (identità
+  visiva → gap feature → automazioni), stato dettagliato di cosa è fatto
+  e cosa resta
 - `README.md` — quick start e struttura cartelle
