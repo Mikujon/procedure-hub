@@ -32,20 +32,22 @@ export default async function NotificationSettingsPage({
     <div className="mx-auto max-w-2xl space-y-6">
       <SlackOAuthStatusToast status={searchParams.slack} reason={searchParams.reason} />
 
-      <div>
+      <div className="opacity-0 animate-rise">
         <h1 className="font-display text-3xl font-semibold tracking-tight">Notifiche</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Collega i tuoi account per ricevere promemoria e richieste di approvazione fuori dall&apos;app.
         </p>
       </div>
 
-      <SlackConnectionCard
-        connected={Boolean(user?.slackIdentity)}
-        teamId={user?.slackIdentity?.slackTeamId}
-        configured={isSlackOAuthConfigured()}
-      />
+      <div className="opacity-0 animate-rise" style={{ animationDelay: "60ms" }}>
+        <SlackConnectionCard
+          connected={Boolean(user?.slackIdentity)}
+          teamId={user?.slackIdentity?.slackTeamId}
+          configured={isSlackOAuthConfigured()}
+        />
+      </div>
 
-      <Card>
+      <Card className="opacity-0 animate-rise" style={{ animationDelay: "120ms" }}>
         <CardHeader className="flex-row items-center justify-between space-y-0">
           <div>
             <CardTitle className="text-sm">Google Chat</CardTitle>

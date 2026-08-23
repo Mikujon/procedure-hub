@@ -20,22 +20,24 @@ export default async function AutomationsPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-8">
-      <div>
+      <div className="opacity-0 animate-rise">
         <h1 className="font-display text-3xl font-semibold tracking-tight">Automazioni</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Regole che notificano o archiviano procedure automaticamente, senza intervento manuale.
         </p>
       </div>
 
-      <Card>
-        <CardHeader className="flex-row items-center gap-2 space-y-0 border-b border-border py-4">
-          <Zap className="h-4 w-4 text-primary" />
-          <CardTitle className="font-display text-sm font-semibold uppercase tracking-wide">Regole</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <AutomationsPanel rules={rules as any} />
-        </CardContent>
-      </Card>
+      <div className="opacity-0 animate-rise" style={{ animationDelay: "60ms" }}>
+        <Card>
+          <CardHeader className="flex-row items-center gap-2 space-y-0 border-b border-border py-4">
+            <Zap className="h-4 w-4 text-primary" />
+            <CardTitle className="font-display text-sm font-semibold uppercase tracking-wide">Regole</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <AutomationsPanel rules={rules as any} />
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

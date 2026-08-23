@@ -73,7 +73,7 @@ export default function EditProcedurePage({ params }: { params: { id: string } }
 
   return (
     <div className="mx-auto max-w-4xl space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between opacity-0 animate-rise">
         <h1 className="font-display text-2xl font-semibold">Modifica procedura</h1>
         <button
           onClick={publish}
@@ -89,25 +89,29 @@ export default function EditProcedurePage({ params }: { params: { id: string } }
         onChange={(e) => setTitle(e.target.value)}
         placeholder="Titolo procedura"
         disabled={!canEdit}
-        className="w-full rounded-sm border border-border bg-background px-3 py-2 font-display text-xl outline-none focus:border-primary disabled:opacity-70"
+        className="w-full rounded-sm border border-border bg-background px-3 py-2 font-display text-xl outline-none focus:border-primary disabled:opacity-70 opacity-0 animate-rise"
+        style={{ animationDelay: "60ms" }}
       />
       <input
         value={summary}
         onChange={(e) => setSummary(e.target.value)}
         placeholder="Breve descrizione"
         disabled={!canEdit}
-        className="w-full rounded-sm border border-border bg-background px-3 py-2 text-sm text-muted-foreground outline-none focus:border-primary disabled:opacity-70"
+        className="w-full rounded-sm border border-border bg-background px-3 py-2 text-sm text-muted-foreground outline-none focus:border-primary disabled:opacity-70 opacity-0 animate-rise"
+        style={{ animationDelay: "120ms" }}
       />
 
-      <BlockEditor
-        parent={{ type: "procedure", id: params.id }}
-        initialBlocks={blocks}
-        editable={canEdit}
-        collabToken={collabToken}
-        user={collabUser}
-      />
+      <div className="opacity-0 animate-rise" style={{ animationDelay: "180ms" }}>
+        <BlockEditor
+          parent={{ type: "procedure", id: params.id }}
+          initialBlocks={blocks}
+          editable={canEdit}
+          collabToken={collabToken}
+          user={collabUser}
+        />
+      </div>
 
-      <p className="text-xs text-muted-foreground">
+      <p className="text-xs text-muted-foreground opacity-0 animate-rise" style={{ animationDelay: "240ms" }}>
         Ogni blocco si salva da solo mentre scrivi. &quot;Pubblica versione&quot; crea una nuova versione immutabile
         dall&apos;intero contenuto attuale — se la procedura era Pubblicata, torna in stato Draft finché non viene
         ri-approvata; la versione precedente resta visibile ai lettori fino ad allora.

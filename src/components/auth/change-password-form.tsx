@@ -41,8 +41,8 @@ export function ChangePasswordForm({ mustChange }: { mustChange: boolean }) {
   }
 
   return (
-    <Card className="w-full max-w-sm p-8">
-      <div className="mb-6 text-center">
+    <Card className="w-full max-w-sm p-8 opacity-0 animate-rise">
+      <div className="mb-6 text-center opacity-0 animate-rise" style={{ animationDelay: "80ms" }}>
         <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-sm border-2 border-primary font-display text-sm font-bold text-primary">
           PH
         </div>
@@ -56,7 +56,7 @@ export function ChangePasswordForm({ mustChange }: { mustChange: boolean }) {
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-3">
+      <form onSubmit={handleSubmit} className="space-y-3 opacity-0 animate-rise" style={{ animationDelay: "150ms" }}>
         <div className="space-y-1.5">
           <Label htmlFor="currentPassword" className="text-xs text-muted-foreground">
             {mustChange ? "Password temporanea" : "Password attuale"}

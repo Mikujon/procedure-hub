@@ -70,7 +70,7 @@ export default function NotificationsPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between opacity-0 animate-rise">
         <div>
           <h1 className="font-display text-3xl font-semibold tracking-tight">Notifiche</h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -95,8 +95,9 @@ export default function NotificationsPage() {
         </div>
       ) : (
         <Card className="overflow-hidden">
-          {items.map((n) => {
+          {items.map((n, i) => {
             const Icon = ICONS[n.type] ?? Bell;
+            const delay = Math.min(i, 15) * 40;
             const inner = (
               <div
                 className={cn(
@@ -116,11 +117,22 @@ export default function NotificationsPage() {
               </div>
             );
             return n.linkUrl ? (
-              <Link key={n.id} href={n.linkUrl} onClick={() => markOne(n.id)} className="block hover:bg-muted/50">
+              <Link
+                key={n.id}
+                href={n.linkUrl}
+                onClick={() => markOne(n.id)}
+                className="block opacity-0 animate-rise hover:bg-muted/50"
+                style={{ animationDelay: `${delay}ms` }}
+              >
                 {inner}
               </Link>
             ) : (
-              <button key={n.id} onClick={() => markOne(n.id)} className="block w-full text-left hover:bg-muted/50">
+              <button
+                key={n.id}
+                onClick={() => markOne(n.id)}
+                className="block w-full text-left opacity-0 animate-rise hover:bg-muted/50"
+                style={{ animationDelay: `${delay}ms` }}
+              >
                 {inner}
               </button>
             );

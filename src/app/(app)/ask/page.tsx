@@ -89,13 +89,13 @@ export default function AskPage() {
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col">
-      <div className="mb-6 flex items-center gap-2">
+      <div className="mb-6 flex items-center gap-2 opacity-0 animate-rise">
         <Sparkles className="h-5 w-5 text-primary" />
         <h1 className="font-display text-2xl font-bold tracking-tight">Chiedi</h1>
       </div>
 
       {turns.length === 0 && (
-        <p className="mb-6 text-sm text-muted-foreground">
+        <p className="mb-6 text-sm text-muted-foreground opacity-0 animate-rise" style={{ animationDelay: "60ms" }}>
           Fai una domanda in linguaggio naturale sulle procedure pubblicate — es. &quot;qual è la procedura per l&apos;onboarding IT?&quot;.
           Rispondo solo sulla base di procedure pubblicate esistenti, citando sempre la fonte.
         </p>
@@ -103,7 +103,7 @@ export default function AskPage() {
 
       <div className="space-y-6">
         {turns.map((t, i) => (
-          <div key={i} className="space-y-2">
+          <div key={i} className="space-y-2 opacity-0 animate-rise">
             <p className="font-medium text-foreground">{t.question}</p>
             <Card className="p-4 text-sm leading-relaxed">
               {t.answer || (t.streaming && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />)}
@@ -129,7 +129,7 @@ export default function AskPage() {
 
       {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
 
-      <Card className="sticky bottom-6 mt-6 flex flex-row items-center gap-2 p-2 shadow-lg">
+      <Card className="sticky bottom-6 mt-6 flex flex-row items-center gap-2 p-2 opacity-0 animate-rise shadow-lg">
         <Input
           value={question}
           onChange={(e) => setQuestion(e.target.value)}

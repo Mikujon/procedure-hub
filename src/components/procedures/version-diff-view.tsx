@@ -23,7 +23,11 @@ export function VersionDiffView({ blocks }: { blocks: DiffBlockResult[] }) {
   return (
     <div className="divide-y divide-border/60">
       {blocks.map((block, i) => (
-        <div key={i} className={cn("border-l-2 py-2 pl-3 pr-2 text-sm leading-relaxed", STATUS_STYLES[block.status])}>
+        <div
+          key={i}
+          className={cn("border-l-2 py-2 pl-3 pr-2 text-sm leading-relaxed opacity-0 animate-rise", STATUS_STYLES[block.status])}
+          style={{ animationDelay: `${Math.min(i, 20) * 25}ms` }}
+        >
           <div className="mb-0.5 flex items-center gap-2">
             <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{block.label}</span>
             {STATUS_LABEL[block.status] && (

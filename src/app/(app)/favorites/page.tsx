@@ -17,7 +17,7 @@ export default async function FavoritesPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <div>
+      <div className="opacity-0 animate-rise">
         <h1 className="flex items-center gap-2 font-display text-3xl font-semibold tracking-tight">
           <Star className="h-6 w-6 text-stamp-amber" /> Preferiti
         </h1>
@@ -35,7 +35,7 @@ export default async function FavoritesPage() {
         </div>
       ) : (
         <Card className="divide-y divide-border overflow-hidden">
-          {favorites.map((f) => (
+          {favorites.map((f, i) => (
             <ProcedureListRow
               key={f.id}
               id={f.procedure.id}
@@ -44,6 +44,7 @@ export default async function FavoritesPage() {
               departmentName={f.procedure.department.name}
               date={f.procedure.updatedAt}
               status={f.procedure.status}
+              index={i}
             />
           ))}
         </Card>

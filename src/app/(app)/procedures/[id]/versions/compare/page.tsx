@@ -59,12 +59,14 @@ export default async function CompareVersionsPage({
         <ArrowLeft className="h-4 w-4" /> {procedure.title}
       </Link>
 
-      <h1 className="font-display text-2xl font-semibold tracking-tight">Confronto versioni</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {procedure.code} · {procedure.department.name}
-      </p>
+      <div className="opacity-0 animate-rise">
+        <h1 className="font-display text-2xl font-semibold tracking-tight">Confronto versioni</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {procedure.code} · {procedure.department.name}
+        </p>
+      </div>
 
-      <div className="mt-4">
+      <div className="mt-4 opacity-0 animate-rise" style={{ animationDelay: "60ms" }}>
         <VersionCompareControls
           procedureId={procedure.id}
           versions={versions.map((v) => ({
@@ -78,11 +80,11 @@ export default async function CompareVersionsPage({
       </div>
 
       {sameVersion ? (
-        <p className="my-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+        <p className="my-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 opacity-0 animate-rise dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
           Seleziona due versioni diverse per vedere le differenze.
         </p>
       ) : (
-        <div className="my-4 flex flex-wrap items-center gap-2 text-xs">
+        <div className="my-4 flex flex-wrap items-center gap-2 text-xs opacity-0 animate-rise" style={{ animationDelay: "120ms" }}>
           <Badge variant="secondary">
             <span className="text-emerald-600 dark:text-emerald-400">+{summary.added}</span>&nbsp;aggiunti
           </Badge>
@@ -95,9 +97,11 @@ export default async function CompareVersionsPage({
         </div>
       )}
 
-      <Card>
-        <CardContent className="px-4 py-2">{sameVersion ? null : <VersionDiffView blocks={diff} />}</CardContent>
-      </Card>
+      <div className="opacity-0 animate-rise" style={{ animationDelay: "180ms" }}>
+        <Card>
+          <CardContent className="px-4 py-2">{sameVersion ? null : <VersionDiffView blocks={diff} />}</CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

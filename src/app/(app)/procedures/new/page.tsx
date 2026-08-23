@@ -125,7 +125,7 @@ function NewProcedureForm() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between opacity-0 animate-rise" style={{ animationDelay: "0ms" }}>
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Nuova</p>
           <h1 className="font-display text-2xl font-semibold">Crea procedura</h1>
@@ -140,7 +140,7 @@ function NewProcedureForm() {
       </div>
 
       {error && (
-        <div className="rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <div className="rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive animate-rise">
           {error}
         </div>
       )}
@@ -149,10 +149,11 @@ function NewProcedureForm() {
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         placeholder="Titolo procedura"
-        className="w-full rounded-sm border border-border bg-background px-3 py-2 font-display text-xl outline-none focus:border-primary"
+        className="w-full rounded-sm border border-border bg-background px-3 py-2 font-display text-xl outline-none focus:border-primary opacity-0 animate-rise"
+        style={{ animationDelay: "60ms" }}
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 opacity-0 animate-rise sm:grid-cols-2" style={{ animationDelay: "120ms" }}>
         <label className="space-y-1">
           <span className="text-xs font-medium text-muted-foreground">Codice procedura</span>
           <input
@@ -217,10 +218,11 @@ function NewProcedureForm() {
         value={summary}
         onChange={(e) => setSummary(e.target.value)}
         placeholder="Breve descrizione"
-        className="w-full rounded-sm border border-border bg-background px-3 py-2 text-sm text-muted-foreground outline-none focus:border-primary"
+        className="w-full rounded-sm border border-border bg-background px-3 py-2 text-sm text-muted-foreground outline-none focus:border-primary opacity-0 animate-rise"
+        style={{ animationDelay: "180ms" }}
       />
 
-      <div className="flex flex-wrap gap-6">
+      <div className="flex flex-wrap gap-6 opacity-0 animate-rise" style={{ animationDelay: "240ms" }}>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={requiresAck} onChange={(e) => setRequiresAck(e.target.checked)} />
           Richiede presa visione (Read &amp; Acknowledge)
@@ -231,9 +233,11 @@ function NewProcedureForm() {
         </label>
       </div>
 
-      <ProcedureEditor content={content.json} onChange={(json, html) => setContent({ json, html })} />
+      <div className="opacity-0 animate-rise" style={{ animationDelay: "300ms" }}>
+        <ProcedureEditor content={content.json} onChange={(json, html) => setContent({ json, html })} />
+      </div>
 
-      <p className="text-xs text-muted-foreground">
+      <p className="text-xs text-muted-foreground opacity-0 animate-rise" style={{ animationDelay: "360ms" }}>
         La procedura viene creata in stato <strong>Draft</strong>. Potrai inviarla in revisione dalla pagina di
         dettaglio una volta pronto il contenuto.
       </p>

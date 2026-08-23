@@ -1,10 +1,12 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, FolderTree, Star, Bell, ShieldCheck, Settings, Sparkles } from "lucide-react";
+import { LayoutDashboard, FolderTree, ChevronRight, Star, Bell, ShieldCheck, Settings, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PageTree } from "./page-tree";
+import { DepartmentTree } from "./department-tree";
 
 interface Department {
   id: string;
@@ -23,6 +25,44 @@ export function Sidebar({
   canEditWorkspace?: boolean;
 }) {
   const pathname = usePathname();
+  const [expandedDepts, setExpandedDepts] = useState<Set<string>>(new Set());
+  const [revealTarget, setRevealTarget] = useState<{ departmentId: string; procedureId: string } | null>(null);
+
+  function toggleDept(id: string) {
+    setExpandedDepts((s) => {
+      const next = new Set(s);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  // "Always know where you are" (like GitHub/VS Code auto-expanding the
+  // file explorer to the open file): whenever the route lands on a
+  // procedure or department that wasn't reached by clicking this tree
+  // itself (search, breadcrumb, a notification, a direct link), open the
+  // right branch automatically instead of leaving the sidebar wherever the
+  // user last left it. Additive only — never collapses a department the
+  // user expanded by hand.
+  useEffect(() => {
+    const procMatch = pathname.match(/^\/procedures\/([^/]+)/);
+    if (procMatch) {
+      const procedureId = procMatch[1];
+      fetch(`/api/procedures/${procedureId}/location`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((loc) => {
+          if (!loc) return;
+          setExpandedDepts((s) => new Set(s).add(loc.departmentId));
+          setRevealTarget({ departmentId: loc.departmentId, procedureId });
+        })
+        .catch(() => {});
+      return;
+    }
+    const deptMatch = pathname.match(/^\/departments\/([^/]+)/);
+    if (deptMatch) {
+      const dept = departments.find((d) => d.slug === deptMatch[1]);
+      if (dept) setExpandedDepts((s) => new Set(s).add(dept.id));
+    }
+  }, [pathname, departments]);
 
   const primaryLinks = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -54,21 +94,41 @@ export function Sidebar({
             Dipartimenti
           </p>
           <div className="mt-2 space-y-0.5">
-            {departments.map((dept) => (
-              <Link
-                key={dept.id}
-                href={`/departments/${dept.slug}`}
-                className={cn(
-                  "flex items-center gap-2.5 rounded-sm px-3 py-2 text-sm transition-colors",
-                  pathname === `/departments/${dept.slug}`
-                    ? "bg-muted font-medium text-foreground"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                )}
-              >
-                <FolderTree className="h-4 w-4 shrink-0" />
-                <span className="truncate">{dept.name}</span>
-              </Link>
-            ))}
+            {departments.map((dept) => {
+              const isOpen = expandedDepts.has(dept.id);
+              const active = pathname === `/departments/${dept.slug}`;
+              return (
+                <div key={dept.id}>
+                  <div
+                    className={cn(
+                      "group flex items-center gap-1 rounded-sm pr-1 text-sm transition-colors",
+                      active ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    <button
+                      onClick={() => toggleDept(dept.id)}
+                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded hover:bg-border/60"
+                      title="Espandi"
+                    >
+                      <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", isOpen && "rotate-90")} />
+                    </button>
+                    <Link href={`/departments/${dept.slug}`} className="flex min-w-0 flex-1 items-center gap-2.5 py-1.5">
+                      <FolderTree className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{dept.name}</span>
+                    </Link>
+                  </div>
+                  {/* Mounted only once expanded — mount-on-demand is the lazy-load, no fetch for a department the user never opens. */}
+                  {isOpen && (
+                    <DepartmentTree
+                      departmentId={dept.id}
+                      variant="sidebar"
+                      baseDepth={1}
+                      revealProcedureId={revealTarget?.departmentId === dept.id ? revealTarget.procedureId : undefined}
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       </nav>
