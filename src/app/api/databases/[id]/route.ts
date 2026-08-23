@@ -132,10 +132,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         await tx.databaseView.deleteMany({ where: { id: { in: toDelete } } });
       }
       for (const v of incoming) {
+        const config = (v.config ?? {}) as any;
         await tx.databaseView.upsert({
           where: { id: v.id },
-          create: { id: v.id, databaseId: params.id, name: v.name, type: toViewType(v.type), groupByColumnId: v.groupByPropertyId ?? null },
-          update: { name: v.name, groupByColumnId: v.groupByPropertyId ?? null },
+          create: { id: v.id, databaseId: params.id, name: v.name, type: toViewType(v.type), groupByColumnId: v.groupByPropertyId ?? null, config },
+          update: { name: v.name, groupByColumnId: v.groupByPropertyId ?? null, config },
         });
       }
     }

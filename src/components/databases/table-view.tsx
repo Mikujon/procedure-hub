@@ -36,8 +36,12 @@ export function TableView({ db, rows, readOnly = false, patchRow, addRow, delete
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={row.id} className="group border-b border-border last:border-0 hover:bg-muted/20">
+          {rows.map((row, i) => (
+            <tr
+              key={row.id}
+              className="group border-b border-border opacity-0 last:border-0 hover:bg-muted/20 animate-rise"
+              style={{ animationDelay: `${Math.min(i, 20) * 25}ms` }}
+            >
               <td className="border-r border-border text-center align-middle">
                 {!readOnly && (
                   <button

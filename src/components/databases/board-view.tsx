@@ -75,15 +75,16 @@ export function BoardView({ db, rows, view, readOnly = false, onSetGroupBy, patc
           onDropRow={(rowId) => moveTo(rowId, col.key)}
           onAdd={() => addRow(col.key === "__none__" ? {} : { [groupProp.id]: col.key })}
         >
-          {rowsFor(col.key).map((row) => (
-            <BoardCard
-              key={row.id}
-              row={row}
-              readOnly={readOnly}
-              properties={db.properties.filter((p) => p.id !== groupProp.id)}
-              onTitle={(t) => patchRow(row.id, { title: t })}
-              onDelete={() => deleteRow(row.id)}
-            />
+          {rowsFor(col.key).map((row, i) => (
+            <div key={row.id} className="opacity-0 animate-rise" style={{ animationDelay: `${Math.min(i, 12) * 40}ms` }}>
+              <BoardCard
+                row={row}
+                readOnly={readOnly}
+                properties={db.properties.filter((p) => p.id !== groupProp.id)}
+                onTitle={(t) => patchRow(row.id, { title: t })}
+                onDelete={() => deleteRow(row.id)}
+              />
+            </div>
           ))}
         </BoardColumn>
       ))}

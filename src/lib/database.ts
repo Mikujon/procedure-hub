@@ -21,8 +21,10 @@ export interface Property {
 export interface View {
   id: string;
   name: string;
-  type: "table" | "board";
+  type: "table" | "board" | "gallery" | "calendar";
   groupByPropertyId?: string;
+  /** CALENDAR only: which DATE property positions rows on the grid. */
+  config?: { dateColumnId?: string };
 }
 
 export const SELECT_COLORS = [
@@ -115,18 +117,22 @@ export function fromColumnType(type: ColumnType): PropertyType {
 const TO_VIEW_TYPE: Record<View["type"], ViewType> = {
   table: "TABLE",
   board: "BOARD",
+  gallery: "GALLERY",
+  calendar: "CALENDAR",
 };
 
 const FROM_VIEW_TYPE: Partial<Record<ViewType, View["type"]>> = {
   TABLE: "table",
   BOARD: "board",
+  GALLERY: "gallery",
+  CALENDAR: "calendar",
 };
 
 export function toViewType(type: View["type"]): ViewType {
   return TO_VIEW_TYPE[type];
 }
 
-/** View types with no frontend renderer yet (CALENDAR, GALLERY, ...) fall back to "table". */
+/** View types with no frontend renderer yet (LIST, TIMELINE) fall back to "table". */
 export function fromViewType(type: ViewType): View["type"] {
   return FROM_VIEW_TYPE[type] ?? "table";
 }
@@ -148,12 +154,13 @@ export function columnsToProperties(
 }
 
 export function viewsToClient(
-  views: { id: string; name: string; type: ViewType; groupByColumnId: string | null }[]
+  views: { id: string; name: string; type: ViewType; groupByColumnId: string | null; config?: unknown }[]
 ): View[] {
   return views.map((v) => ({
     id: v.id,
     name: v.name,
     type: fromViewType(v.type),
     groupByPropertyId: v.groupByColumnId ?? undefined,
+    config: (v.config as View["config"]) ?? undefined,
   }));
 }

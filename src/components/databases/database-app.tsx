@@ -1,13 +1,29 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Table2, Kanban, Trash2, Loader2, Check, Lock } from "lucide-react";
+import { Table2, Kanban, LayoutGrid, CalendarDays, Plus, Trash2, Loader2, Check, Lock } from "lucide-react";
 import { EmojiPicker } from "@/components/pages/emoji-picker";
 import { TableView } from "./table-view";
 import { BoardView } from "./board-view";
+import { GalleryView } from "./gallery-view";
+import { CalendarView } from "./calendar-view";
 import { SELECT_COLORS, uid, type Database, type Property, type PropertyType, type Row, type View } from "./types";
 import { newPropertyClient } from "./helpers";
+
+const VIEW_TYPE_ICON: Record<View["type"], React.ComponentType<{ className?: string }>> = {
+  table: Table2,
+  board: Kanban,
+  gallery: LayoutGrid,
+  calendar: CalendarDays,
+};
+
+const VIEW_TYPE_LABEL: Record<View["type"], string> = {
+  table: "Tabella",
+  board: "Bacheca",
+  gallery: "Galleria",
+  calendar: "Calendario",
+};
 
 export function DatabaseApp({ id }: { id: string }) {
   const router = useRouter();
@@ -164,6 +180,32 @@ export function DatabaseApp({ id }: { id: string }) {
     [persistDb]
   );
 
+  const setViewConfig = useCallback(
+    (viewId: string, config: View["config"]) => {
+      setDb((d) => {
+        if (!d) return d;
+        const views = d.views.map((v) => (v.id === viewId ? { ...v, config: { ...v.config, ...config } } : v));
+        persistDb({ views });
+        return { ...d, views };
+      });
+    },
+    [persistDb]
+  );
+
+  const addView = useCallback(
+    (type: View["type"]) => {
+      const newView: View = { id: uid(), name: VIEW_TYPE_LABEL[type], type };
+      setDb((d) => {
+        if (!d) return d;
+        const views = [...d.views, newView];
+        persistDb({ views });
+        return { ...d, views };
+      });
+      setActiveViewId(newView.id);
+    },
+    [persistDb]
+  );
+
   async function removeDatabase() {
     if (!confirm("Eliminare questo database e tutte le righe?")) return;
     await fetch(`/api/databases/${id}`, { method: "DELETE" });
@@ -222,24 +264,31 @@ export function DatabaseApp({ id }: { id: string }) {
 
       {/* view tabs */}
       <div className="mb-3 flex items-center gap-1 border-b border-border">
-        {db.views.map((v) => (
-          <button
-            key={v.id}
-            onClick={() => setActiveViewId(v.id)}
-            className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm ${
-              v.id === activeView.id ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {v.type === "table" ? <Table2 className="h-4 w-4" /> : <Kanban className="h-4 w-4" />}
-            {v.name}
-          </button>
-        ))}
+        {db.views.map((v) => {
+          const Icon = VIEW_TYPE_ICON[v.type];
+          return (
+            <button
+              key={v.id}
+              onClick={() => setActiveViewId(v.id)}
+              className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm ${
+                v.id === activeView.id ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Icon className="h-4 w-4" />
+              {v.name}
+            </button>
+          );
+        })}
+        {canEdit && <AddViewMenu onAdd={addView} />}
       </div>
 
-      {activeView.type === "table" ? (
-        <TableView db={db} rows={rows} readOnly={!canEdit} {...handlers} />
-      ) : (
+      {activeView.type === "table" && <TableView db={db} rows={rows} readOnly={!canEdit} {...handlers} />}
+      {activeView.type === "board" && (
         <BoardView db={db} rows={rows} view={activeView} readOnly={!canEdit} onSetGroupBy={(pid) => setGroupBy(activeView.id, pid)} {...handlers} />
+      )}
+      {activeView.type === "gallery" && <GalleryView db={db} rows={rows} readOnly={!canEdit} {...handlers} />}
+      {activeView.type === "calendar" && (
+        <CalendarView db={db} rows={rows} view={activeView} readOnly={!canEdit} onSetDateColumn={(pid) => setViewConfig(activeView.id, { dateColumnId: pid })} {...handlers} />
       )}
     </div>
   );
@@ -248,4 +297,40 @@ export function DatabaseApp({ id }: { id: string }) {
 function defaultName(type: PropertyType, index: number) {
   const base: Record<PropertyType, string> = { text: "Testo", number: "Numero", select: "Selezione", date: "Data", checkbox: "Casella", relation: "Relazione" };
   return `${base[type]} ${index + 1}`;
+}
+
+const ADDABLE_VIEW_TYPES: View["type"][] = ["table", "board", "gallery", "calendar"];
+
+function AddViewMenu({ onAdd }: { onAdd: (type: View["type"]) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function onClick(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative ml-1 mb-1">
+      <button onClick={() => setOpen((o) => !o)} className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground" title="Aggiungi vista">
+        <Plus className="h-4 w-4" />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-44 rounded-lg border border-border bg-card p-1.5 shadow-xl">
+          {ADDABLE_VIEW_TYPES.map((t) => {
+            const Icon = VIEW_TYPE_ICON[t];
+            return (
+              <button
+                key={t}
+                onClick={() => { onAdd(t); setOpen(false); }}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm font-normal hover:bg-muted"
+              >
+                <Icon className="h-3.5 w-3.5 text-muted-foreground" /> {VIEW_TYPE_LABEL[t]}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }

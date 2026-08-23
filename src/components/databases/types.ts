@@ -18,8 +18,10 @@ export interface Property {
 export interface View {
   id: string;
   name: string;
-  type: "table" | "board";
+  type: "table" | "board" | "gallery" | "calendar";
   groupByPropertyId?: string;
+  /** CALENDAR only: which DATE property positions rows on the grid. */
+  config?: { dateColumnId?: string };
 }
 
 export interface Row {
