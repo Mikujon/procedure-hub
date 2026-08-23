@@ -132,6 +132,7 @@ model User {
   gchatIdentity      GoogleChatUserIdentity?
   createdPages       Page[]                  @relation("createdPages")
   ownedPages         Page[]                  @relation("ownedPages")
+  verifiedPages      Page[]                  @relation("verifiedPages")
   createdDatabases   Database[]              @relation("createdDatabases")
   createdAutomationRules AutomationRule[]    @relation("createdAutomationRules")
 
@@ -218,6 +219,14 @@ model Page {
   /// date, no approval workflow) — set without creating a Procedure.
   ownerId String?
   owner   User?   @relation("ownedPages", fields: [ownerId], references: [id])
+
+  /// Lightweight staleness signal (2.4) — deliberately not Procedure's
+  /// formal review workflow: anyone who can edit the page can just confirm
+  /// "still accurate" with a timestamp, no approval step. Both null until
+  /// the first confirmation.
+  lastVerifiedAt DateTime?
+  verifiedById   String?
+  verifiedBy     User?      @relation("verifiedPages", fields: [verifiedById], references: [id])
 
   sortOrder  Int     @default(0)
   isArchived Boolean @default(false)
@@ -332,6 +341,11 @@ model DatabaseView {
   name            String
   type            ViewType
   groupByColumnId String?
+
+  /// Type-specific settings that don't warrant their own column, same
+  /// reasoning as DatabaseColumn.config. CALENDAR: { dateColumnId }. Empty
+  /// object for view types that don't need any (TABLE, BOARD, GALLERY).
+  config Json @default("{}")
 
   /// null = shared/default view; set = personal view visible only to its
   /// creator. Field exists now, no personal-view UI yet.
@@ -1000,11 +1014,13 @@ enum AutomationTriggerType {
   REVIEW_DATE_DUE // time-based, generalizes lib/review-reminders.ts
   ACK_CAMPAIGN_AGE // time-based, generalizes scripts/send-ack-reminders.ts
   ACK_CAMPAIGN_COMPLETED // event-driven, hooked from lib/ack.ts's maybeCompleteCampaign — "everyone has read this" as a rule an admin can point at the whole team, not just the owner
+  COMMENT_ADDED // event-driven, hooked from api/procedures/[id]/comments (3.4) — Comment already carries a procedureId, fits the engine's procedure-centric shape without a special case, unlike a Page-level trigger would
 }
 
 enum AutomationActionType {
   SEND_NOTIFICATION // wraps notifyEvent() — the only already-audited notification path
   CHANGE_PROCEDURE_STATUS // restricted to ARCHIVED only, see src/lib/automations/actions.ts
+  SEND_WEBHOOK // generic POST to an admin-supplied URL — unblocks Teams/Jira/ServiceNow via their own native incoming webhooks, no OAuth app registration needed (3.3)
 }
 
 model AutomationRule {
