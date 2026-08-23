@@ -10,8 +10,9 @@ import { EmojiPicker } from "@/components/pages/emoji-picker";
 import { AiToolbarTrigger } from "@/components/ai/ai-toolbar-trigger";
 import { SuggestionPanel } from "@/components/ai/suggestion-panel";
 import { PromoteToProcedureDialog } from "@/components/pages/promote-to-procedure-dialog";
-import { Plus, Trash2, Check, Loader2, FileText, ChevronRight, Lock, ShieldCheck } from "lucide-react";
+import { Plus, Trash2, Check, Loader2, FileText, ChevronRight, Lock, ShieldCheck, ShieldAlert } from "lucide-react";
 import { colorForUser } from "@/lib/collab-colors";
+import { cn } from "@/lib/utils";
 
 interface PageData {
   id: string;
@@ -20,9 +21,18 @@ interface PageData {
   parent: { id: string; title: string; icon: string | null } | null;
   children: { id: string; title: string; icon: string | null }[];
   procedure: { id: string; departmentId: string; status: string } | null;
+  lastVerifiedAt: string | null;
+  verifiedBy: { name: string } | null;
 }
 
 type SaveState = "idle" | "saving" | "saved";
+
+/** Lightweight staleness signal (2.4) — not Procedure's formal review workflow, just "still accurate as of N days ago". */
+const VERIFY_STALE_AFTER_DAYS = 90;
+
+function daysSince(iso: string) {
+  return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+}
 
 export default function WorkspacePage({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -37,6 +47,7 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [suggestionsKey, setSuggestionsKey] = useState(0);
   const [promoteOpen, setPromoteOpen] = useState(false);
+  const [verifying, setVerifying] = useState(false);
 
   // Load (re-runs when navigating between pages).
   useEffect(() => {
@@ -108,6 +119,19 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
     router.push(`/pages/${created.id}`);
   }
 
+  async function verify() {
+    setVerifying(true);
+    try {
+      const res = await fetch(`/api/pages/${params.id}/verify`, { method: "POST" });
+      if (res.ok) {
+        const { page: updated } = await res.json();
+        setPage((p) => (p ? { ...p, lastVerifiedAt: updated.lastVerifiedAt, verifiedBy: updated.verifiedBy } : p));
+      }
+    } finally {
+      setVerifying(false);
+    }
+  }
+
   async function remove() {
     if (!confirm("Archiviare questa pagina e le sue sottopagine?")) return;
     await fetch(`/api/pages/${params.id}`, { method: "DELETE" });
@@ -134,7 +158,7 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
   return (
     <div className="mx-auto max-w-3xl">
       {/* breadcrumb + save state */}
-      <div className="mb-4 flex items-center justify-between text-xs text-muted-foreground">
+      <div className="mb-4 flex items-center justify-between text-xs text-muted-foreground opacity-0 animate-rise">
         <div className="flex items-center gap-1">
           {page.parent && (
             <>
@@ -148,6 +172,7 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
           <span className="text-foreground">{title || "Senza titolo"}</span>
         </div>
         <div className="flex items-center gap-3">
+          <VerificationBadge lastVerifiedAt={page.lastVerifiedAt} verifiedByName={page.verifiedBy?.name ?? null} />
           {canEdit ? (
             <>
               <span className="flex items-center gap-1">
@@ -155,6 +180,14 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
                 {saveState === "saved" && <Check className="h-3 w-3 text-stamp-green" />}
                 {saveState === "saving" ? "Salvataggio…" : saveState === "saved" ? "Salvato" : ""}
               </span>
+              <button
+                onClick={verify}
+                disabled={verifying}
+                className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+              >
+                {verifying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+                Segna come ancora valido
+              </button>
               <AiToolbarTrigger pageId={params.id} onSuggestionCreated={() => setSuggestionsKey((k) => k + 1)} />
               <button
                 onClick={() => setPromoteOpen(true)}
@@ -175,7 +208,7 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
       </div>
 
       {/* icon + title */}
-      <div className="relative mb-2">
+      <div className="relative mb-2 opacity-0 animate-rise" style={{ animationDelay: "60ms" }}>
         <button
           onClick={() => canEdit && setShowPicker((s) => !s)}
           className={`flex h-14 w-14 items-center justify-center rounded-lg text-4xl ${canEdit ? "hover:bg-muted" : "cursor-default"}`}
@@ -191,26 +224,31 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
           value={title}
           onChange={(e) => onTitle(e.target.value)}
           placeholder="Senza titolo"
-          className="mb-4 w-full bg-transparent font-display text-4xl font-bold tracking-tight outline-none placeholder:text-muted-foreground/40"
+          className="mb-4 w-full bg-transparent font-display text-4xl font-bold tracking-tight outline-none placeholder:text-muted-foreground/40 opacity-0 animate-rise"
+          style={{ animationDelay: "100ms" }}
         />
       ) : (
-        <h1 className="mb-4 font-display text-4xl font-bold tracking-tight">{title || "Senza titolo"}</h1>
+        <h1 className="mb-4 font-display text-4xl font-bold tracking-tight opacity-0 animate-rise" style={{ animationDelay: "100ms" }}>
+          {title || "Senza titolo"}
+        </h1>
       )}
 
       {canEdit && <SuggestionPanel pageId={params.id} refreshKey={suggestionsKey} />}
 
       {/* block editor — each block autosaves itself, no page-level content save */}
-      <BlockEditor
-        parent={{ type: "page", id: params.id }}
-        initialBlocks={blocks}
-        editable={canEdit}
-        collabToken={null}
-        user={collabUser}
-      />
+      <div className="opacity-0 animate-rise" style={{ animationDelay: "160ms" }}>
+        <BlockEditor
+          parent={{ type: "page", id: params.id }}
+          initialBlocks={blocks}
+          editable={canEdit}
+          collabToken={null}
+          user={collabUser}
+        />
+      </div>
 
       {/* subpages */}
       {(canEdit || page.children.length > 0) && (
-        <div className="mt-8">
+        <div className="mt-8 opacity-0 animate-rise" style={{ animationDelay: "220ms" }}>
           <div className="mb-2 flex items-center justify-between">
             <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Sottopagine</p>
             {canEdit && (
@@ -230,8 +268,13 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
             )
           ) : (
             <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
-              {page.children.map((c) => (
-                <Link key={c.id} href={`/pages/${c.id}`} className="flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-muted">
+              {page.children.map((c, i) => (
+                <Link
+                  key={c.id}
+                  href={`/pages/${c.id}`}
+                  className="flex items-center gap-2 px-3 py-2.5 text-sm opacity-0 animate-rise hover:bg-muted"
+                  style={{ animationDelay: `${260 + Math.min(i, 12) * 40}ms` }}
+                >
                   <span>{c.icon ?? "📄"}</span>
                   <span className="truncate">{c.title || "Senza titolo"}</span>
                 </Link>
@@ -249,5 +292,29 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
         />
       )}
     </div>
+  );
+}
+
+function VerificationBadge({ lastVerifiedAt, verifiedByName }: { lastVerifiedAt: string | null; verifiedByName: string | null }) {
+  const days = lastVerifiedAt ? daysSince(lastVerifiedAt) : null;
+  const stale = days === null || days > VERIFY_STALE_AFTER_DAYS;
+
+  const label = stale
+    ? "Da verificare"
+    : days === 0
+      ? `Verificato oggi${verifiedByName ? ` da ${verifiedByName}` : ""}`
+      : `Verificato ${days} g fa${verifiedByName ? ` da ${verifiedByName}` : ""}`;
+
+  return (
+    <span
+      className={cn(
+        "flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium",
+        stale ? "bg-stamp-amber/15 text-stamp-amber" : "bg-stamp-green/15 text-stamp-green"
+      )}
+      title={lastVerifiedAt ? `Ultima verifica: ${new Date(lastVerifiedAt).toLocaleDateString("it-IT")}` : "Mai verificata"}
+    >
+      {stale ? <ShieldAlert className="h-3 w-3" /> : <ShieldCheck className="h-3 w-3" />}
+      {label}
+    </span>
   );
 }

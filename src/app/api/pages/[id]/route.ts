@@ -38,6 +38,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       },
       parent: { select: { id: true, title: true, icon: true } },
       procedure: { select: { id: true, departmentId: true, status: true } },
+      verifiedBy: { select: { name: true } },
     },
   });
   if (!page) return NextResponse.json({ error: "Not found" }, { status: 404 });
