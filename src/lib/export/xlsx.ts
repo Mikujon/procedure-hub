@@ -32,6 +32,8 @@ function blockLabel(block: ExportBlock): string {
       return block.kind === "task" ? "Attività" : "Elemento lista";
     case "table":
       return "Tabella";
+    case "tocEntry":
+      return "Voce indice";
   }
 }
 
@@ -56,6 +58,9 @@ function blockContent(block: ExportBlock): string {
     }
     case "table":
       return block.rows.map((row) => row.join(" | ")).join("\n");
+    case "tocEntry":
+      // No pagination or bookmarks to link to in a spreadsheet — plain indented text, same as the fallback pdf.ts/docx.ts had before real bookmarks.
+      return `${"  ".repeat(block.level - 1)}${block.text}`;
   }
 }
 

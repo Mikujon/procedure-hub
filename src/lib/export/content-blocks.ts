@@ -22,7 +22,9 @@ export type ExportBlock =
   | { type: "image"; caption: string }
   | { type: "video"; url: string }
   | { type: "listItem"; kind: "bullet" | "ordered" | "task"; index: number; depth: number; text: string; checked: boolean }
-  | { type: "table"; rows: string[][] };
+  | { type: "table"; rows: string[][] }
+  /** A TABLE_OF_CONTENTS block's entry, once its sentinel is expanded (see the splice pass below) — `headingIndex` is this heading's 0-based position among every `{ type: "heading" }` block in the document, in order. pdf.ts/docx.ts use it to link the entry to a real bookmark/destination at that heading; xlsx.ts (no pagination, no bookmarks) just renders it as indented text. */
+  | { type: "tocEntry"; level: 1 | 2 | 3; text: string; headingIndex: number };
 
 function listItemBlocks(item: PMNode, kind: "bullet" | "ordered" | "task", index: number, depth: number): ExportBlock[] {
   const paragraph = (item.content ?? []).find((n) => n.type === "paragraph");
@@ -100,13 +102,15 @@ export function extractExportBlocks(doc: PMNode | null | undefined): ExportBlock
   }
 
   if (tocMarkerIndices.length > 0) {
-    // Bullets, not real bookmarks — pdf.ts/docx.ts have no concept of an
-    // in-document link target today, so a TOC block exports as a plain
-    // indented list of the same headings rather than the raw sentinel
-    // text leaking into the PDF/Word/Excel file.
+    // headingIndex here is this heading's 0-based position among every
+    // heading block pushed above, in document order — pdf.ts assigns each
+    // heading a bookmark/destination in that exact same order as it
+    // renders, and docx.ts wraps each heading in a Bookmark named
+    // `heading_<index>`, so the two numbering schemes always agree without
+    // this module needing to know anything about PDF/Word internals itself.
     const headingEntries: ExportBlock[] = blocks
       .filter((b): b is Extract<ExportBlock, { type: "heading" }> => b.type === "heading")
-      .map((h, i) => ({ type: "listItem", kind: "bullet", index: i, depth: h.level - 1, text: h.text, checked: false }));
+      .map((h, i): ExportBlock => ({ type: "tocEntry", level: h.level, text: h.text, headingIndex: i }));
     const replacement: ExportBlock[] =
       headingEntries.length > 0 ? headingEntries : [{ type: "paragraph", text: "Nessun titolo nel documento." }];
     // Reverse order so splicing one marker never shifts the recorded index of another still to come.
