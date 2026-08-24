@@ -85,11 +85,45 @@ function defaultContentFor(type: BlockType): any {
       return { url: "" };
     case "TABLE_SIMPLE":
       return { rows: [["", ""], ["", ""]] };
+    case "EMBED":
+      return { url: "", caption: "" };
+    case "DIAGRAM":
+      return { code: "" };
     case "DIVIDER":
     case "TABLE_OF_CONTENTS":
-      return {}; // no text of its own — TOC's list is computed live from sibling heading blocks, see documentHeadings below
+    case "COLUMN_LIST":
+    case "COLUMN":
+      return {}; // no text of its own — TOC's list is computed live from sibling heading blocks (see documentHeadings below); COLUMN_LIST/COLUMN are pure layout containers
     default:
       return { text: [] };
+  }
+}
+
+/** A block and every descendant beneath it (children, grandchildren, …) — the DB cascades all of these on delete (Block.parentBlockId is onDelete: Cascade), so client state has to remove the same set or a grandchild (e.g. a block inside a COLUMN whose COLUMN_LIST just got deleted) would render as a stray root block until the next reload. */
+function collectDescendantIds(flat: FlatBlock[], rootId: string): Set<string> {
+  const ids = new Set([rootId]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const b of flat) {
+      if (b.parentBlockId && ids.has(b.parentBlockId) && !ids.has(b.id)) {
+        ids.add(b.id);
+        grew = true;
+      }
+    }
+  }
+  return ids;
+}
+
+/** Seeds a freshly-inserted COLUMN_LIST with `count` empty COLUMN children — a bare COLUMN_LIST has nothing to lay out side by side, so the "Colonne" slash command always gets 2 (Notion's own default for "split into columns"). Free function, not a hook: called from inside handleSelectBlockTypeImpl's own setFlat updater, where hooks can't be called. */
+function createColumns(createBlockEndpoint: string, columnListId: string, count: number, onCreated: (block: any) => void) {
+  for (let i = 0; i < count; i++) {
+    api(createBlockEndpoint, {
+      method: "POST",
+      body: JSON.stringify({ type: "COLUMN", content: {}, parentBlockId: columnListId, sortOrder: i }),
+    })
+      .then(({ block }) => onCreated(block))
+      .catch(() => {});
   }
 }
 
@@ -180,7 +214,10 @@ export function BlockEditor({ parent, initialBlocks, editable, collabToken, user
   }, []);
 
   const handleDeleteImpl = useCallback((blockId: string) => {
-    setFlat((prev) => prev.filter((b) => b.id !== blockId && b.parentBlockId !== blockId));
+    setFlat((prev) => {
+      const idsToRemove = collectDescendantIds(prev, blockId);
+      return prev.filter((b) => !idsToRemove.has(b.id));
+    });
     api(`/api/blocks/${blockId}`, { method: "DELETE" }).catch(() => {});
   }, []);
 
@@ -216,6 +253,14 @@ export function BlockEditor({ parent, initialBlocks, editable, collabToken, user
                 sortOrder: block.sortOrder,
               },
             ]);
+            if (type === "COLUMN_LIST") {
+              createColumns(createBlockEndpoint, block.id, 2, (column) => {
+                setFlat((cur) => [
+                  ...cur,
+                  { id: column.id, type: column.type, content: column.content, parentBlockId: column.parentBlockId, sortOrder: column.sortOrder },
+                ]);
+              });
+            }
           })
           .catch(() => {});
 
@@ -232,7 +277,11 @@ export function BlockEditor({ parent, initialBlocks, editable, collabToken, user
 
   const handleBackspaceEmptyImpl = useCallback(
     (blockId: string) => {
-      setFlat((prev) => (prev.length <= 1 ? prev : prev.filter((b) => b.id !== blockId && b.parentBlockId !== blockId)));
+      setFlat((prev) => {
+        if (prev.length <= 1) return prev;
+        const idsToRemove = collectDescendantIds(prev, blockId);
+        return prev.filter((b) => !idsToRemove.has(b.id));
+      });
       api(`/api/blocks/${blockId}`, { method: "DELETE" }).catch(() => {});
     },
     []
@@ -286,6 +335,28 @@ export function BlockEditor({ parent, initialBlocks, editable, collabToken, user
     api(`/api/blocks/${blockId}`, { method: "PATCH", body: JSON.stringify({ type }) }).catch(() => {});
   }, []);
 
+  /** "+ Aggiungi blocco" inside an empty COLUMN — unlike handleSelectBlockTypeImpl (always inserts a *sibling* after an existing block), this adds a block as a *child* of `parentBlockId` regardless of what's already there, appended after however many children it already has. The only other place blocks gain children today (TOGGLE_LIST_ITEM, nested lists) does it via the lazy backfill/import pipeline, not a live "add" action — COLUMN is the first block type that needs one. */
+  const handleAddChildImpl = useCallback(
+    (parentBlockId: string, type: BlockType) => {
+      setFlat((prev) => {
+        const siblingCount = prev.filter((b) => b.parentBlockId === parentBlockId).length;
+        api(createBlockEndpoint, {
+          method: "POST",
+          body: JSON.stringify({ type, content: defaultContentFor(type), parentBlockId, sortOrder: siblingCount }),
+        })
+          .then(({ block }) => {
+            setFlat((cur) => [
+              ...cur,
+              { id: block.id, type: block.type, content: block.content, parentBlockId: block.parentBlockId, sortOrder: block.sortOrder },
+            ]);
+          })
+          .catch(() => {});
+        return prev;
+      });
+    },
+    [createBlockEndpoint]
+  );
+
   // Stable identities for everything handed down into a per-block Tiptap
   // instance — see useStableCallback's doc comment for why this matters.
   const onTextChange = useStableCallback(handleTextChangeImpl);
@@ -296,6 +367,7 @@ export function BlockEditor({ parent, initialBlocks, editable, collabToken, user
   const onDelete = useStableCallback(handleDeleteImpl);
   const onDuplicate = useStableCallback(handleDuplicateImpl);
   const onTurnInto = useStableCallback(handleTurnIntoImpl);
+  const onAddChild = useStableCallback(handleAddChildImpl);
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
@@ -377,6 +449,7 @@ export function BlockEditor({ parent, initialBlocks, editable, collabToken, user
               onDuplicate={onDuplicate}
               onTurnInto={onTurnInto}
               documentHeadings={documentHeadings}
+              onAddChild={onAddChild}
             />
           ))}
         </SortableContext>
