@@ -38,7 +38,7 @@ che ha causato questa situazione.
   UI in `/admin/automations`. Due regole di esempio reali già seedate nel
   tenant demo.
 
-### Traccia 1 — Identità visiva in profondità: **1.0, 1.1, 1.2 fatte**
+### Traccia 1 — Identità visiva in profondità: **fatta (1.0-1.4), 20 ago 2026**
 - **1.0**: due colori esadecimali hardcoded dalla primissima direzione
   grafica (`#2F5D8C` sui cursori di collaborazione) sostituiti con una
   palette derivata dai token — `src/lib/collab-colors.ts` (nuovo).
@@ -64,44 +64,39 @@ dare un falso negativo (l'ho scoperto a metà di 1.2, ha risparmiato lavoro
 inutile). Verifica sempre leggendo il componente condiviso prima di
 assumere che manchi qualcosa.
 
-### Cosa NON è ancora fatto — tutto il resto di questo documento
+- **1.3 + 2.3** (fatte insieme, 20 ago 2026): `ViewType` allargato a
+  `table | board | gallery | calendar` in `lib/database.ts` e
+  `components/databases/types.ts` (prima solo `table | board`, disallineato
+  dall'enum Prisma che già prevedeva tutti e 6 i valori). Nuovi
+  `gallery-view.tsx` (card grid) e `calendar-view.tsx` (vista mese/settimana,
+  colonna Data di riferimento configurabile, salvata nel nuovo campo
+  `DatabaseView.config` — piccola migration). `database-app.tsx`: il
+  ternario `table ? TableView : BoardView` (bug: qualsiasi altro tipo
+  cadeva su Board) sostituito da un branch esplicito per tipo, più un
+  controllo reale "+ Aggiungi vista" (prima assente — le viste esistevano
+  solo se create lato dati). Motion aggiunta anche a `table-view.tsx`/
+  `board-view.tsx` (righe/schede con `animate-rise` a cascata). Verificato
+  dal vivo: creazione di ognuna delle 4 viste, righe con date reali
+  posizionate correttamente sul calendario (mese e settimana), nessun
+  bug da fuso orario sulla data.
+- **1.4** (fatta, 20 ago 2026): passaggio motion reale (non solo font) su
+  tutte le pagine rimaste — `procedures/new`, `procedures/[id]/edit`,
+  `procedures/[id]/versions/compare` (incluso lo stagger sui blocchi di
+  `VersionDiffView`), `databases/[id]` (wrapper, nessun lavoro necessario —
+  il vero lavoro è su `database-app.tsx`, già fatto in 1.3+2.3),
+  `pages/[id]`, `admin/settings`, `admin/automations` (+ il pannello regole,
+  che aveva ancora zero motion), `departments/[slug]`, `notifications`,
+  `ask`, `settings/notifications`, `(auth)/login`, `(auth)/change-password`.
+  `favorites/page.tsx`: verificato come suggerito — *quasi* ok, ma non
+  passava `index` a `ProcedureListRow`, quindi tutte le righe comparivano
+  insieme invece che in sequenza; corretto passando `index={i}` nel map
+  (bug reale trovato verificando, non solo leggendo). Ogni pagina
+  verificata dal vivo nel browser (screenshot), non solo `tsc --noEmit`.
+  `docs/DESIGN.md` aggiornato con la lista onesta finale.
 
----
+### Cosa NON è ancora fatto — tutto il resto di questo documento (Traccia 3, da 3.1)
 
-## Traccia 1 — Identità visiva in profondità (continua da 1.3)
-
-### 1.3 Viste database (Table/Board) — **fare insieme a 2.3 sotto**
-
-`src/components/databases/table-view.tsx`, `board-view.tsx` — trattamento
-visivo (motion, eventuali micro-interazioni). Non farla come task isolato:
-lo stesso codice va toccato per aggiungere Gallery/Calendario (2.3), farle
-insieme evita di ritoccare due volte gli stessi file.
-
-### 1.4 Le altre pagine — un passaggio vero, non il titolo
-
-Pagine che oggi hanno *solo* `font-display` sull'`<h1>` e nient'altro
-(nessun `animate-*`, verificato via grep + lettura diretta il 19 ago
-2026): `procedures/new/page.tsx`, `procedures/[id]/edit/page.tsx`,
-`procedures/[id]/versions/compare/page.tsx`, `databases/[id]/page.tsx`
-(il wrapper; il vero lavoro è su `database-app.tsx`, vedi 2.3),
-`pages/[id]/page.tsx`, `admin/settings/page.tsx`,
-`admin/automations/page.tsx`, `departments/[slug]/page.tsx`,
-`notifications/page.tsx`, `ask/page.tsx`, `settings/notifications/page.tsx`,
-`(auth)/login/page.tsx`, `(auth)/change-password/page.tsx`.
-
-Applicare lo stesso pattern già validato: liste con `animate-rise` e
-`animationDelay` scalare (`index * 60ms`, vedi `ProcedureListRow` o
-`AttachmentsPanel` come riferimento), non solo un cambio di font.
-`favorites/page.tsx` va verificato ma probabilmente eredita già
-abbastanza da `ProcedureListRow` — controllare prima di modificare.
-
-**Quando questa traccia è finita**: aggiornare `docs/DESIGN.md` con la
-lista onesta e aggiornata di cosa ha ricevuto lavoro vero vs trattamento
-minimo per scelta esplicita (non lasciarla implicita di nuovo).
-
-**Verifica**: dopo ogni pagina, `npx tsc --noEmit` + apertura reale nel
-browser (screenshot o lettura DOM/computed-style) — non fidarsi della sola
-lettura di codice.
+Traccia 1 e Traccia 2 sono **entrambe complete** (20-21 ago 2026).
 
 ---
 
@@ -110,69 +105,120 @@ lettura di codice.
 Ordine per rapporto valore/sforzo (confermato da esplorazione diretta del
 codice il 19 ago 2026, non stimato a occhio).
 
-### 2.1 UI Commenti — backend già pronto, serve solo il frontend
+### 2.1 UI Commenti — **fatta, 20 ago 2026**
 
-Il modello `Comment` (`prisma/schema.prisma`) e l'API
-(`GET /api/procedures/[id]` include già `comments`, con `replies`
-annidate) esistono e funzionano — **oggi vengono scaricati a ogni
-caricamento pagina e buttati via**, nessun componente li mostra. Costruire
-un thread sotto il contenuto della procedura (lista + form di risposta),
-badge "N commenti" visibile. Nessuna migrazione, nessun cambio di API.
+Il modello `Comment` esisteva già ma **nessun endpoint di scrittura**
+esisteva davvero (`GET /api/procedures/[id]` includeva `comments` in
+lettura, ma senza `author` sulle `replies` — gap corretto qui). Aggiunti
+`POST /api/procedures/[id]/comments` (top-level + risposte, un solo
+livello — una risposta deve puntare a un commento senza a sua volta un
+`parentId`, altrimenti 400) e `DELETE /api/comments/[id]` (autore o
+ADMIN; cancella prima le eventuali risposte in transazione, non c'è
+`onDelete: Cascade` sulla self-relation). Nessun `AuditLog` — stesso
+livello di `favorites`/`acknowledgments` (azione di partecipazione, non di
+governance), non quello di blocchi/allegati.
 
-### 2.2 Galleria template — più ampiezza
+Nuovo `components/procedures/comment-thread.tsx`: form + lista con
+`animate-rise` a cascata, badge "N commenti" cliccabile accanto ai tag
+(link a `#commenti`) e contatore nell'header della card, aggiornamento
+locale ottimistico dopo post/delete. `procedures/[id]/page.tsx` ora
+include `comments` nella propria query (prima assente — la card commenti
+non esisteva). Verificato dal vivo: commento → risposta → contatore a 2 →
+elimina risposta → elimina commento → torna a "Nessun commento ancora",
+badge in testata scompare correttamente sotto 1.
 
-`src/components/layout/template-picker-dialog.tsx` è già una vera gallery
-in stile Notion (card grid in un modal), non un dropdown — il gap è
-l'ampiezza: solo 5 template seed (`prisma/seed-templates.ts`). Aggiungere
-10-15 template realistici per procedure aziendali (Onboarding, Checklist
-audit, Verbale riunione compliance, Piano di formazione, Registro non
-conformità, ecc.). Valutare se serve anche una pagina `/templates`
-dedicata, non solo il dialog.
+### 2.2 Galleria template — **fatta, 20 ago 2026**
 
-### 2.3 Viste database Gallery e Calendario — fare insieme a 1.3
+Aggiunti 10 nuovi template in `prisma/seed-templates.ts` (totale 15, da 5):
+Onboarding Nuovo Dipendente, Checklist Audit Interno, Verbale Riunione
+Compliance, Piano di Formazione, Registro Non Conformità (CAPA),
+Segnalazione Incidente, Richiesta di Modifica (Change Request), Offboarding
+Dipendente, Valutazione Rischio Fornitore, Piano di Risposta a Data Breach
+— tutti `category: "CUSTOM"` (verificato: `TemplateCategory` non guida
+filtri/raggruppamenti in nessun componente oggi, quindi non vale una
+migration per estendere l'enum con valori mai letti). **Scoperta durante
+l'esecuzione**: lo script non era mai stato lanciato su questo database —
+i 5 template "già seedati" secondo `CLAUDE.md` non esistevano affatto
+(`created`, non `updated`, in log per tutti e 5). Pagina `/templates`
+dedicata: valutata e scartata — 15 card in una griglia 3 colonne stanno
+comode in un modal, non serve una pagina a sé finché il conteggio non
+cresce molto oltre questo.
 
-Lo schema Prisma (`ViewType` enum: `TABLE`, `BOARD`, `CALENDAR`,
-`GALLERY`, `LIST`, `TIMELINE`) prevede già questi valori — **il frontend
-no**: `src/components/databases/types.ts` ha `type: "table" | "board"`,
-un'unione letterale che non corrisponde all'enum Prisma. Lavoro concreto:
-- Allargare l'unione di tipo in `types.ts` a tutti i valori dell'enum.
-- `src/components/databases/database-app.tsx` ha un ternario fisso
-  (`activeView.type === "table" ? <TableView/> : <BoardView/>` — qualsiasi
-  cosa non sia `"table"` cade su `BoardView`) — convertirlo in uno
-  switch/registry reale.
-- Costruire `gallery-view.tsx` (card grid — stesso pattern del template
-  picker) e `calendar-view.tsx` (vista mese/settimana, un campo data di
-  riferimento configurabile per database).
-- Aggiungere un controllo "+ Aggiungi vista" — oggi assente, le viste
-  esistono solo se già create lato dati, non c'è modo di crearne una
-  nuova dalla UI.
+Verificato dal vivo: dialog mostra tutte e 15 le card con icona/descrizione
+corrette; istanziato "Piano di Formazione" da `+ → Da modello` → pagina
+creata con titoli, bullet e tabella (Modulo/Durata/Formatore/Data) clonati
+correttamente in blocchi reali, editabili (`+ riga`/`+ colonna` presenti).
 
-### 2.4 Verifica/staleness sulle Page
+### 2.3 Viste database Gallery e Calendario — **fatta, vedi 1.3 sopra** (fatte insieme, 20 ago 2026)
 
-`Page` (a differenza di `Procedure`) non ha **nessun** campo di revisione
-— confermato leggendo `prisma/schema.prisma` per intero. Aggiungere un
-pattern leggero (non il workflow formale di Procedure): `lastVerifiedAt`/
-`verifiedById` su `Page`, un pulsante "Segna come ancora valido", un badge
-"Verificato N giorni fa" / "Da verificare" oltre una soglia (es. 90
-giorni). Nuova migration piccola, non tocca `Procedure`.
+### 2.4 Verifica/staleness sulle Page — **fatta, 20 ago 2026**
 
-### 2.5 Cruscotto "salute dei contenuti" — c'è anche un bug vero
+Nuova migration `page_verification`: `lastVerifiedAt`/`verifiedById` su
+`Page` (+ relazione `verifiedPages` su `User`, stesso pattern di
+`ownedPages`/`createdPages`). Nuovo `POST /api/pages/[id]/verify` (stesso
+gate RBAC di `PATCH /api/pages/[id]`: department-gated se promossa a
+Procedure, workspace altrimenti — imposta `lastVerifiedAt`/`verifiedById`.
+Badge in `pages/[id]/page.tsx`: verde "Verificato N giorni fa / oggi da
+{nome}" se ≤90 giorni, ambra "Da verificare" se mai verificata o oltre
+soglia; pulsante "Segna come ancora valido" solo per chi può modificare.
+Verificato dal vivo: badge parte da "Da verificare" su una pagina mai
+confermata, click → "Verificato oggi da Alessia Admin" (verde), persistito
+lato server (non solo stato locale).
 
-`GET /api/admin/kpi` (`src/app/api/admin/kpi/route.ts`) oggi guarda solo
-*in avanti* 30 giorni (`upcomingReviews`) — **non intercetta le procedure
-già scadute** (la query filtra `nextReviewDate: { lte: now + 30gg }` ma
-non ha un limite inferiore, quindi tecnicamente le include se sono già
-passate... verificare comunque il comportamento reale con dati di test
-prima di assumere sia già corretto). Aggiungere: % di conferme completate
-su procedure che le richiedono (join con `AckCampaign`), conteggio Page
-"da verificare" (una volta fatta 2.4).
+### 2.5 Cruscotto "salute dei contenuti" — **fatta, 20 ago 2026**
 
-### 2.6 @Mention
+**Il sospetto bug non esisteva**: verificato con dati di test reali (una
+procedura resa scaduta di 10 giorni via script, poi ripristinata) — la
+query `nextReviewDate: { lte: now+30gg }` senza limite inferiore include
+già correttamente le procedure scadute, non serviva alcun fix. Non
+fidarsi solo della rilettura del codice ha comunque avuto senso: ha
+chiuso il dubbio con certezza invece di lasciarlo aperto.
 
-`NotificationType.MENTION` esiste nello schema, **nulla lo produce mai**
-(verificato via grep — zero occorrenze di logica di menzione). Ambito
-naturale: dentro 2.1 (i commenti). Autocompletamento `@nome` nell'editor +
-produzione reale della notifica.
+Aggiunto invece, in `GET /api/admin/kpi`: `ackCompletionRate` (% di
+`AckCampaign` completate tra quelle *correnti* — solo la campagna della
+versione attualmente pubblicata conta, una campagna di una versione
+superata non è "ancora aperta" anche se non ha mai raggiunto il 100%) e
+`pagesNeedingVerification` (conteggio Page non archiviate mai verificate o
+oltre i 90 giorni, stessa soglia del badge 2.4). Lato UI
+(`admin-dashboard.tsx`): due nuove `StatCard` (mostra "—" quando non ci
+sono campagne, non "0%" che sembrerebbe un fallimento) e le righe
+"Prossime revisioni" ora distinguono le scadute (badge rosso "Scaduta" +
+data in rosso) dalle imminenti.
+
+Verificato dal vivo (via `get_page_text`, non screenshot — i contatori
+`CountUp` animano su `IntersectionObserver` e uno screenshot può
+catturarli a metà corsa, dando l'impressione fuorviante di numeri
+"instabili" da un caricamento all'altro: non è un bug, è solo il
+momento dello scatto): la procedura resa scaduta appare nella lista con
+badge "Scaduta" e data corretta.
+
+### 2.6 @Mention — **fatta, 21 ago 2026 — Traccia 2 completa**
+
+Nuovo `GET /api/users?q=` (directory minima del tenant — id/nome/avatar,
+nessun endpoint del genere esisteva già per un utente non-admin).
+`comment-thread.tsx`: digitare `@` nella textarea apre un dropdown con gli
+utenti che matchano, filtrato via l'endpoint sopra con un debounce di
+150ms. **Deliberatamente non parso "@Nome" dal testo per capire chi è
+stato menzionato** — il client tiene già una mappa id→nome di ogni utente
+scelto dal dropdown e la manda esplicita (`mentionedUserIds`) col
+commento: matchare nomi via regex si romperebbe con due colleghi
+omonimi. Se l'utente cancella/modifica il testo dopo aver scelto una
+menzione, il submit la scarta controllando che "@Nome" sia ancora presente
+nel testo — non a prova di bomba ma sufficiente per lo scopo.
+
+Backend (`POST /api/procedures/[id]/comments`): rivalida gli id lato
+server (mai fidarsi di quelli nel body), scarta l'auto-menzione, poi
+`notifyEvent({type:"MENTION", ...})` — mai un invio diretto, rispetta la
+regola 6. Aggiunto un campo `linkSuffix` opzionale a `notifyEvent()`
+(`lib/integrations/notify.ts`) così il link della notifica punta a
+`/procedures/[id]#commenti` invece che in cima alla pagina — cambio
+retrocompatibile, tutti i chiamanti esistenti restano invariati.
+
+Verificato dal vivo: digitato "@Car" → dropdown mostra "Carlo Compliance"
+con avatar → selezionato → testo inserito correttamente con cursore
+riposizionato → commento pubblicato → **riga `Notification` con
+`type: MENTION` confermata via query diretta al DB**, `linkUrl` corretto
+con `#commenti`, titolo e corpo (troncato a 140 caratteri) corretti.
 
 ### 2.7 Esplicitamente fuori scope per ora
 
@@ -194,25 +240,31 @@ scatta → verificato via query SQL diretta, non a occhio).
 Ordine per rapporto valore/sforzo (confermato da esplorazione diretta del
 motore attuale il 19 ago 2026).
 
-### 3.1 Vista dettaglio esecuzioni — il dato c'è già, manca la UI
+### 3.1 Vista dettaglio esecuzioni — **fatta, 21 ago 2026**
 
-`AutomationRun` (`prisma/schema.prisma`) cattura già `firedAt`/`status`/
-`error`, ma `src/components/settings/automations-panel.tsx` mostra solo
-`_count.runs` (un numero). Aggiungere un pannello a comparsa (click sulla
-regola) con la lista delle ultime esecuzioni, stato ed errore — stesso
-pattern a lista con `animate-rise`. Nessun cambio di schema.
+Nuovo `GET /api/admin/automations/[id]/runs` (admin-only, tenant-scoped):
+ultime 25 `AutomationRun`, con la procedura risolta in un secondo batch
+lookup — `entityId` è sempre un procedureId anche quando `entityType`
+vale `"AckCampaign"` (vedi come `engine.ts` chiama `fireRule` in
+`runAckCampaignAgeRule`), quindi un'unica query copre entrambe le
+famiglie di trigger senza bisogno di un `if` per tipo. In
+`automations-panel.tsx`: click sulla riga regola espande un pannello con
+icona verde/rossa, procedura, tempo relativo ed eventuale errore —
+caricato pigramente solo all'apertura, non in coda a `GET /api/admin/automations`.
 
-### 3.2 Condizioni per tag nella UI
+### 3.2 Condizioni per tag nella UI — **fatta, 21 ago 2026**
 
-`tagNameIn`/`tagNameNotIn` esistono già nel motore
-(`src/lib/automations/conditions.ts`) e nello schema zod
-(`src/lib/automations/types.ts`), ma **non hanno alcun controllo nel
-form** (`src/components/settings/create-automation-dialog.tsx` ha solo un
-checkbox `onlyCritical` → `isCriticalEquals`) — oggi raggiungibili solo
-via chiamata API diretta. Aggiungere un selettore multiplo di tag nel
-dialog. Zero lavoro di backend.
+Aggiunto `GET /api/tags` (nessun endpoint per elencare i tag esisteva —
+piccola deviazione dal piano che diceva "zero lavoro di backend": un
+selettore a chip contro i tag *reali* del tenant è stato preferito a un
+campo di testo libero, che avrebbe fallito in silenzio su un tag scritto
+con un refuso, senza validazione). `create-automation-dialog.tsx`: chip
+multi-selezionabili sotto "Solo per procedure critiche", inviati come
+`conditions.tagNameIn`. `tagNameNotIn` resta raggiungibile solo via API
+diretta — il piano chiedeva "un selettore", non entrambe le direzioni, e
+l'uso reale (includere, non escludere) copre il caso comune.
 
-### 3.3 Azione "webhook generico"
+### 3.3 Azione "webhook generico" — **fatta, 21 ago 2026**
 
 Solo Slack e Google Chat hanno un invio reale
 (`src/lib/integrations/notification-fanout.ts` interroga solo quei due
@@ -226,12 +278,56 @@ provider, non condivisa. Nuovo `AutomationActionType.SEND_WEBHOOK` che
 riusa quel pattern (fetch diretta a un URL webhook in ingresso, payload
 semplice) — sblocca Teams/Jira/ServiceNow via i loro webhook nativi senza
 bisogno di OAuth. Nuovo executor in `src/lib/automations/actions.ts`,
-nuovo schema zod in `types.ts`, campo URL nel form.
+nuovo schema zod in `types.ts`, campo URL nel form. A differenza del
+fan-out Slack/Google Chat in `notify.ts` (che inghiotte l'errore ed emette
+solo un `console.error`, per non far fallire tutta la notifica per un
+canale), qui una risposta non-2xx **rilancia** l'errore: la chiamata
+webhook è l'intera azione, quindi il suo fallimento deve arrivare in
+`AutomationRun.error` (visibile in 3.1), non sparire in un log che
+nessuno guarda. Migration `automation_webhook_action` per il nuovo
+valore enum.
 
-### 3.4 Nuovi trigger, in coppia con la Traccia 2
+Verificato dal vivo, non solo `tsc --noEmit`: creata una regola reale
+("Notifica GDPR a Jira quando pubblicata", tag GDPR + webhook verso un
+server di eco locale) dal form → invocato il motore reale
+(`runStatusAutomations`) per la procedura GDPR DSAR con stato PUBLISHED →
+il server di eco ha ricevuto un POST JSON corretto (codice, titolo,
+stato, dipartimento, URL) → `AutomationRun` con `status: SUCCESS` →
+confermato anche nel pannello 3.1 (spunta verde, "LEG-PRO-001 — ... · 2
+min fa"). Dati di test rimossi a fine verifica (regola, run iniettati,
+notifica, pagine di prova create per errore durante i test precedenti).
 
-"Page verificata" (si aggancia a 2.4), "Commento aggiunto" (si aggancia a
-2.1) — costruirli quando quelle feature esistono, non prima.
+### 3.4 Nuovi trigger, in coppia con la Traccia 2 — **"Commento aggiunto" fatto, 21 ago 2026; "Page verificata" no, per scelta**
+
+"Page verificata" (si aggancia a 2.4) e "Commento aggiunto" (si aggancia a
+2.1) erano entrambi tecnicamente sbloccati — entrambe le feature esistono
+— ma solo il secondo si inseriva nel motore senza attrito: `fireRule`,
+ogni executor in `actions.ts` e `AutomationRun.entityType` presuppongono
+ovunque un `procedureId` centrale, e `Comment.procedureId` esiste già.
+"Page verificata" no: una Page libera (non promossa a Documento
+Controllato) non ha alcun `procedureId` — estenderla richiederebbe un
+caso speciale in ogni executor o un secondo path di esecuzione parallelo,
+non semplicemente un altro trigger. **Non costruita**, lasciata a una
+decisione esplicita se/quando serve.
+
+**"Commento aggiunto"**: nuovo `AutomationTriggerType.COMMENT_ADDED`
+(migration `comment_added_trigger`), `commentAddedConfigSchema` vuoto
+(stessa categoria di `ACK_CAMPAIGN_COMPLETED` — solo storico, fireKey
+casuale, un commento è un evento one-shot che non può plausibilmente
+doppio-scattare per lo stesso fireKey). Nuovo
+`runCommentAddedAutomations()` in `engine.ts`, agganciato in
+`POST /api/procedures/[id]/comments` subito dopo la creazione del
+commento (stessa convenzione "await inline" di `runStatusAutomations`/
+`runAckCompletionAutomations` — mai fire-and-forget). Aggiunta l'opzione
+al form e alla label del trigger.
+
+Verificato dal vivo tramite **richiesta HTTP reale** (non uno script che
+bypassa la route): creata una regola "Nuovo commento → notifica il
+proprietario" dal form → postato un commento vero sulla procedura GDPR
+DSAR dall'interfaccia commenti (2.1) → `AutomationRun` con
+`status: SUCCESS` → riga `Notification` reale per Carlo Compliance
+(l'owner, non l'autore del commento) con titolo e `linkUrl` corretti.
+Dati di test rimossi.
 
 ### 3.5 Irrobustire il dedup sugli eventi
 

@@ -54,9 +54,24 @@ a sé stante.
   - `pulse-ring` — anello pulsante per indicatori di presenza/attività.
   - `scan-sweep` — riflesso che attraversa un campo di ricerca mentre una
     query è in corso (`components/ui/scan-bar.tsx`).
-  Applicate finora a chrome (sidebar/topbar), `StatusStamp`, dashboard, KPI
-  admin, pagina procedura, ricerca — non a tutte le 17 pagine: un tocco
-  orchestrato batte cento effetti sparsi, per scelta, non per fretta.
+  **Aggiornato 20 ago 2026** (fine Traccia 1, `docs/REDESIGN-FEATURE-AUTOMATION-PLAN.md`):
+  ogni pagina autenticata ha ricevuto un passaggio reale, non solo il font
+  del titolo — verificato nel browser, non solo letto nel codice, dopo che
+  un primo giro era risultato più superficiale di quanto documentato (vedi
+  cronologia in cima al piano). Copertura: chrome (sidebar/topbar),
+  `StatusStamp`, dashboard, KPI admin, ricerca, pagina procedura (workflow
+  panel, allegati), titoli *dentro* il contenuto pubblicato e i due menu
+  slash-command, viste Database (Tabella/Bacheca/Galleria/Calendario — le
+  ultime due nuove, vedi Traccia 2), crea/modifica procedura, confronto
+  versioni, pagina workspace (`pages/[id]`), impostazioni admin e
+  automazioni (incluso il pannello regole), dipartimento, notifiche,
+  Chiedi (Q&A AI), notifiche personali, login e cambio password. Non
+  decorazione sparsa: liste usano lo stagger (`animate-rise` + `index` che
+  scala `animation-delay`, tetto a ~12-20 elementi così una lista lunga non
+  impiega secondi a comparire), pagine a form/dettaglio usano una sequenza
+  di comparsa a sezioni. `export-menu.tsx` è l'unico punto lasciato
+  invariato per scelta esplicita — già animato via Radix/tailwindcss-animate,
+  nulla da aggiungere.
 - **Layout**: sidebar con gerarchia dipartimentale reale (non decorativa),
   breadcrumb che rispecchia la struttura Department → Process → Procedure —
   invariato dalla direzione precedente.

@@ -42,6 +42,7 @@ la risoluzione via subdomain, che non esiste su localhost).
 | `npm run db:migrate` | Crea/applica una nuova migration |
 | `npm run lint` | ESLint |
 | `npx tsc --noEmit` | Type-check completo |
+| `npm test` | Test automatici (Vitest, vedi sotto) |
 
 ## Regole architetturali da rispettare sempre
 
@@ -83,13 +84,13 @@ src/app/
   (auth)/login/              pagina di accesso
   (app)/                     area autenticata (richiede sessione)
     dashboard/                homepage: recenti, preferiti, annunci, scadenze
-    departments/[slug]/       lista procedure di un dipartimento
+    departments/[slug]/       alberatura Processo → Procedura → Istruzione di Lavoro del dipartimento
     procedures/[id]/          dettaglio procedura (contenuto, workflow, versioni, ack)
     procedures/[id]/edit/     editor Tiptap
     admin/                    dashboard KPI (solo ADMIN/COMPLIANCE_OFFICER)
   api/
-    procedures/                CRUD + submit/decide/archive (workflow)
-    departments/                CRUD dipartimenti
+    procedures/                CRUD + submit/decide/archive (workflow); procedures/[id]/location = lookup minimo per l'auto-reveal della sidebar
+    departments/                CRUD dipartimenti; departments/[id]/tree = dati piatti Processi+Procedure per DepartmentTree
     acknowledgments/            Read & Acknowledge
     attachments/                upload/download/delete allegati (presigned URL, lib/storage.ts)
     search/                     proxy verso MeiliSearch
@@ -104,7 +105,10 @@ src/components/
   procedures/status-stamp.tsx   badge di stato workflow (elemento firma UI)
   procedures/workflow-panel.tsx azioni submit/approve/reject/archive
   procedures/acknowledge-button.tsx
+  procedures/procedure-breadcrumb.tsx  breadcrumb con dropdown "salta ai fratelli" a ogni livello
   layout/                       sidebar, topbar, ricerca globale
+  layout/page-tree.tsx           alberatura Workspace (Pagine/Database), stile Notion — pattern originale
+  layout/department-tree.tsx     alberatura Processo → Procedura → Istruzione di Lavoro, stesso pattern di page-tree.tsx; riusata sia in sidebar.tsx (lazy, un dipartimento alla volta) sia in departments/[slug]/page.tsx (sempre caricata)
 
 src/lib/
   permissions/index.ts          RBAC centralizzato — leggi prima di toccare permessi
@@ -123,9 +127,56 @@ prisma/seed.ts                  dati demo (dipartimenti, utenti, ruoli, una proc
 
 ## Cosa è già completo
 
-*Aggiornato 19 ago 2026. Voce dopo voce, non fidarti di questa lista più
+*Aggiornato 21 ago 2026. Voce dopo voce, non fidarti di questa lista più
 del codice/UI reali — la cronologia sotto mostra quanto spesso questo file
 si è disallineato in passato.*
+
+**21 ago 2026**: alberatura Dipartimento → Processo → Procedura → Istruzione
+di Lavoro **navigabile** (`src/components/layout/department-tree.tsx`) —
+prima di oggi la gerarchia esisteva solo nel modello dati (`Process`,
+`Procedure.processId`/`parentId`), verificato che in tutto il tenant demo
+non c'era **nessun** `Process` né **nessuna** Work Instruction reali, e la
+pagina dipartimento era una tabella piatta senza espandi/collassa. Stesso
+pattern di `page-tree.tsx` (fetch flat, albero costruito client-side,
+chevron/click come Notion): riusato sia in `sidebar.tsx` (un dipartimento
+espanso = un fetch, lazy) sia in `departments/[slug]/page.tsx` (righe più
+ricche, primo livello aperto di default). Corretta anche una lacuna di
+visibilità reale trovata riscrivendo la query: la pagina dipartimento non
+filtrava per `visibilityWhereClause`, quindi una procedura RESTRICTED era
+visibile a chiunque conoscesse lo slug del dipartimento — ora
+`GET /api/departments/[id]/tree` applica la stessa regola di
+`canViewProcedure`. Aggiunto anche un tocco "più innovativo" richiesto
+esplicitamente: il breadcrumb sulla pagina procedura
+(`procedures/procedure-breadcrumb.tsx`) ha un dropdown "salta ai fratelli"
+su ogni livello navigabile (dipartimento, procedura padre se Work
+Instruction, procedura corrente) — il livello Processo resta testo
+semplice, non ha ancora una pagina propria. Verificato dal vivo: creato un
+Processo reale con 2 procedure assegnate + 1 Work Instruction vera,
+navigazione sidebar e pagina dipartimento entrambe corrette (icone
+distinte Layers/FileText/ListChecks, indentazione, stato colorato), salto
+tra fratelli dal breadcrumb testato e funzionante; tutti i dati di test
+rimossi a fine verifica.
+
+Aggiunto nella stessa giornata, su richiesta esplicita ("come Git — Go to
+file, sa sempre dove sei, resta fisso"): **auto-reveal** in stile GitHub/VS
+Code. Aprire una procedura da un punto che non è l'albero stesso (ricerca,
+breadcrumb, notifica, link diretto) ora espande automaticamente la sidebar
+sul ramo giusto (dipartimento → processo → eventuale procedura padre) e fa
+scroll fino alla riga, evidenziata — mai in modo distruttivo, non collassa
+mai un ramo che l'utente aveva già aperto a mano. Nuovo
+`GET /api/procedures/[id]/location` (lookup minimo, non l'intera
+`GET /api/procedures/[id]` con contenuto/versioni) usato solo da questo.
+La ricerca full-text esistente (`⌘K`, `command-palette.tsx`) è già di
+fatto il "Go to file" — non ne serviva una seconda. **Bug reale trovato e
+corretto nello stesso passaggio**: il primo livello dei Processi nella
+vista pagina (`variant="page"`) non si apriva mai di default come
+documentato sopra — la chiave usata per marcare "aperto" non combaciava
+con quella letta da `renderProcess` (`id` nudo vs `process:${id}`).
+Verificato dal vivo: aperta una Work Instruction via URL diretto (mai
+cliccata nell'albero) → sidebar si apre da sola su
+Dipartimento → Processo → Procedura padre → riga evidenziata e scrollata
+in vista; ricaricata la pagina dipartimento → il Processo ora è aperto di
+default davvero (prima richiedeva un click). Dati di test rimossi.
 
 **19 ago 2026**: provisioning utenti reale (`POST /api/admin/users`,
 password temporanea + `mustChangePassword`, non più solo `prisma/seed.ts`)
@@ -138,8 +189,9 @@ nel topbar) · motore di automazioni nei workflow (`src/lib/automations/`,
 regola architetturale 7) con UI admin in `/admin/automations`.
 
 Multi-tenancy · auth email/password · CRUD procedure con versioning ·
-gerarchia Department → Process → Procedure → Work Instruction · workflow di
-approvazione con audit trail · RBAC a due livelli · Read &
+gerarchia Department → Process → Procedure → Work Instruction (navigabile
+ad albero, vedi 21 ago 2026 sopra) · workflow di approvazione con audit
+trail · RBAC a due livelli · Read &
 Acknowledge (con escalation multi-canale e certificato PDF) · notifiche
 in-app + Slack/Google Chat (modalità webhook) · ricerca full-text con filtri
 · dashboard KPI · tag/template · upload allegati reale (`POST /api/attachments`,
@@ -204,10 +256,24 @@ utenti, non per difficoltà tecnica.
 5. **Teams / SharePoint / Jira / Freshdesk / ServiceNow**: `Integration.type`
    li prevede già nello schema; ogni adapter segue lo stesso pattern di
    `lib/integrations/slack.ts`.
-6. **Test automatici**: nessuno presente ancora (solo dipendenze in
-   `node_modules` hanno test propri). Partire dai flussi critici (workflow
-   di approvazione, permessi, versioning, motore di automazioni) con
-   Vitest/Playwright.
+6. **Test automatici** — **avviata, 21 ago 2026**: prima infrastruttura
+   Vitest (`vitest.config.mts`, `npm test`), 35 test in `tests/`, i quattro
+   flussi indicati come priorità sono coperti — `tests/permissions.test.ts`
+   (RBAC: visibilità, edit/publish, isolamento multi-tenant su un
+   `departmentId` incrociato), `tests/workflow.test.ts` (pipeline di
+   approvazione incluso lo skip di `COMPLIANCE_APPROVAL` per contenuto non
+   critico/non taggato e la sua eccezione, rejection, `archiveProcedure`,
+   immutabilità di `ProcedureVersion`), `tests/automations.test.ts`
+   (`matchesConditions`, dedup reale sui trigger a tempo via
+   `@@unique([ruleId, entityId, fireKey])`, e il gap di dedup *documentato
+   ma non prima testato* sui trigger event-driven). Sono test di
+   integrazione reali contro il Postgres di dev (non mock) — ogni file crea
+   un Tenant isolato (`tests/helpers/test-tenant.ts`) e lo cancella in
+   `afterAll`; solo Slack/Google Chat (BullMQ) e l'indicizzazione
+   MeiliSearch sono mockati (`tests/setup.ts`, infrastruttura esterna già
+   verificata altrove, non l'oggetto di questo test). Ancora da fare: motore
+   di export, ricerca, upload allegati, componenti UI — Playwright non
+   ancora introdotto.
 
 ~~Export PDF/Word/Excel dalla pagina procedura~~ e ~~diff view tra
 versioni~~ risultavano qui come roadmap futura in versioni precedenti di
