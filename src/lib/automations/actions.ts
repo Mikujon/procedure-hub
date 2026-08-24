@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { notifyEvent, resolveDefaultRecipients } from "@/lib/integrations/notify";
 import { archiveProcedure } from "@/lib/workflow";
 import { getSystemActorId } from "./system-actor";
-import type { SendNotificationConfig, ChangeProcedureStatusConfig } from "./types";
+import type { SendNotificationConfig, ChangeProcedureStatusConfig, SendWebhookConfig } from "./types";
 
 export async function executeSendNotification(tenantId: string, procedureId: string, config: SendNotificationConfig) {
   let userIds: string[] | undefined;
@@ -55,4 +55,43 @@ export async function executeChangeProcedureStatus(
   // ARCHIVED-triggered rules — see the guard's own comment in
   // lib/workflow/index.ts for the loop this prevents.
   await archiveProcedure(procedureId, actorId, { skipAutomations: true });
+}
+
+/**
+ * Generic outbound webhook (3.3) — same "plain fetch, no SDK" pattern as
+ * lib/integrations/slack.ts's webhook mode, made reusable for whatever
+ * incoming-webhook URL an admin pastes in (Teams, Jira, ServiceNow, a
+ * custom endpoint...) instead of one adapter file per provider. Unlike
+ * notify.ts's Slack/Google Chat fan-out, a failed request here throws
+ * instead of being swallowed — the webhook call *is* the action, so its
+ * failure must land in AutomationRun.status/error (surfaced in the 3.1 run
+ * history), not disappear into a console.error no one is watching.
+ */
+export async function executeSendWebhook(_tenantId: string, procedureId: string, config: SendWebhookConfig) {
+  const procedure = await prisma.procedure.findUniqueOrThrow({
+    where: { id: procedureId },
+    select: { id: true, title: true, code: true, status: true, department: { select: { name: true } } },
+  });
+
+  const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.procedurehub.com";
+
+  const res = await fetch(config.url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      event: "procedure.automation",
+      procedure: {
+        id: procedure.id,
+        code: procedure.code,
+        title: procedure.title,
+        status: procedure.status,
+        department: procedure.department.name,
+        url: `${appBaseUrl}/procedures/${procedure.id}`,
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Il webhook ha risposto con stato ${res.status}`);
+  }
 }

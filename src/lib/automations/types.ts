@@ -31,6 +31,11 @@ export const ackCampaignAgeConfigSchema = z.object({
 
 export const ackCampaignCompletedConfigSchema = z.object({}).strict();
 
+/// Fires on every new Comment (top-level or reply) on any procedure —
+/// same "history only, no dedup key" category as ACK_CAMPAIGN_COMPLETED,
+/// see engine.ts's runCommentAddedAutomations.
+export const commentAddedConfigSchema = z.object({}).strict();
+
 export function parseTriggerConfig(triggerType: string, config: unknown) {
   switch (triggerType) {
     case "PROCEDURE_STATUS_ENTERED":
@@ -41,6 +46,8 @@ export function parseTriggerConfig(triggerType: string, config: unknown) {
       return ackCampaignAgeConfigSchema.parse(config);
     case "ACK_CAMPAIGN_COMPLETED":
       return ackCampaignCompletedConfigSchema.parse(config);
+    case "COMMENT_ADDED":
+      return commentAddedConfigSchema.parse(config);
     default:
       throw new Error(`Unknown triggerType "${triggerType}"`);
   }
@@ -77,12 +84,24 @@ export const changeProcedureStatusConfigSchema = z.object({
 });
 export type ChangeProcedureStatusConfig = z.infer<typeof changeProcedureStatusConfigSchema>;
 
+/// Generic outbound webhook (3.3) — same trust boundary as Slack/Google
+/// Chat's own webhookUrl config (Integration.config): only a tenant ADMIN
+/// can set it (see the isTenantAdmin gate in api/admin/automations), so an
+/// admin-supplied POST target isn't a new SSRF surface, it's the same one
+/// those integrations already accept.
+export const sendWebhookConfigSchema = z.object({
+  url: z.string().url(),
+});
+export type SendWebhookConfig = z.infer<typeof sendWebhookConfigSchema>;
+
 export function parseActionConfig(actionType: string, config: unknown) {
   switch (actionType) {
     case "SEND_NOTIFICATION":
       return sendNotificationConfigSchema.parse(config);
     case "CHANGE_PROCEDURE_STATUS":
       return changeProcedureStatusConfigSchema.parse(config);
+    case "SEND_WEBHOOK":
+      return sendWebhookConfigSchema.parse(config);
     default:
       throw new Error(`Unknown actionType "${actionType}"`);
   }
@@ -92,9 +111,9 @@ export const createAutomationRuleSchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().max(1000).optional(),
   isEnabled: z.boolean().optional(),
-  triggerType: z.enum(["PROCEDURE_STATUS_ENTERED", "REVIEW_DATE_DUE", "ACK_CAMPAIGN_AGE", "ACK_CAMPAIGN_COMPLETED"]),
+  triggerType: z.enum(["PROCEDURE_STATUS_ENTERED", "REVIEW_DATE_DUE", "ACK_CAMPAIGN_AGE", "ACK_CAMPAIGN_COMPLETED", "COMMENT_ADDED"]),
   triggerConfig: z.record(z.any()),
   conditions: conditionsSchema,
-  actionType: z.enum(["SEND_NOTIFICATION", "CHANGE_PROCEDURE_STATUS"]),
+  actionType: z.enum(["SEND_NOTIFICATION", "CHANGE_PROCEDURE_STATUS", "SEND_WEBHOOK"]),
   actionConfig: z.record(z.any()),
 });

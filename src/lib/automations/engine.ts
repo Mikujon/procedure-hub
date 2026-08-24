@@ -2,8 +2,8 @@ import crypto from "crypto";
 import type { DocumentStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { matchesConditions } from "./conditions";
-import { executeSendNotification, executeChangeProcedureStatus } from "./actions";
-import type { AutomationConditions, SendNotificationConfig, ChangeProcedureStatusConfig } from "./types";
+import { executeSendNotification, executeChangeProcedureStatus, executeSendWebhook } from "./actions";
+import type { AutomationConditions, SendNotificationConfig, ChangeProcedureStatusConfig, SendWebhookConfig } from "./types";
 
 interface RuleRow {
   id: string;
@@ -39,6 +39,8 @@ async function fireRule(rule: RuleRow, entityType: string, entityId: string, fir
       await executeSendNotification(rule.tenantId, procedureId, rule.actionConfig as SendNotificationConfig);
     } else if (rule.actionType === "CHANGE_PROCEDURE_STATUS") {
       await executeChangeProcedureStatus(rule.tenantId, procedureId, rule.actionConfig as ChangeProcedureStatusConfig);
+    } else if (rule.actionType === "SEND_WEBHOOK") {
+      await executeSendWebhook(rule.tenantId, procedureId, rule.actionConfig as SendWebhookConfig);
     }
   } catch (err) {
     await prisma.automationRun.updateMany({
@@ -87,6 +89,32 @@ export async function runStatusAutomations(tenantId: string, procedureId: string
 export async function runAckCompletionAutomations(tenantId: string, procedureId: string) {
   const rules = await prisma.automationRule.findMany({
     where: { tenantId, isEnabled: true, triggerType: "ACK_CAMPAIGN_COMPLETED" },
+  });
+  if (rules.length === 0) return;
+
+  const procedure = await prisma.procedure.findUnique({
+    where: { id: procedureId },
+    select: { id: true, isCritical: true },
+  });
+  if (!procedure) return;
+
+  for (const rule of rules) {
+    if (!(await matchesConditions(procedure, rule.conditions as AutomationConditions))) continue;
+    await fireRule(rule, "Procedure", procedureId, crypto.randomUUID(), procedureId);
+  }
+}
+
+/**
+ * Event-driven entry point — called from POST /api/procedures/[id]/comments
+ * right after a Comment (top-level or reply) is created. History only, not
+ * a dedup key (fresh id every call) — same category as
+ * runAckCompletionAutomations above, a comment is a one-shot event, not
+ * something that could plausibly double-fire for the same fireKey the way
+ * a time-based scan revisiting the same procedure could.
+ */
+export async function runCommentAddedAutomations(tenantId: string, procedureId: string) {
+  const rules = await prisma.automationRule.findMany({
+    where: { tenantId, isEnabled: true, triggerType: "COMMENT_ADDED" },
   });
   if (rules.length === 0) return;
 
