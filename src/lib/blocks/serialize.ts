@@ -129,10 +129,19 @@ function blockToPMNodes(block: BlockWithChildren): PMNode[] {
       const own: PMNode[] = nonEmpty(text) ? [{ type: "paragraph", content: text }] : [];
       return [...own, ...siblingsToPMNodes(block.children)];
     }
+    case "TABLE_OF_CONTENTS":
+      // No dedicated ProseMirror node either, but unlike the placeholder
+      // types below this one has a real reader-facing meaning worth
+      // preserving: emit a sentinel paragraph that lib/toc.ts finds and
+      // replaces with an actual list of links to that same document's
+      // headings, once it has assigned them anchor ids (same pass, so the
+      // TOC block and the floating reading outline always point at the
+      // same anchors). TOC_BLOCK_RE there must stay in sync with this text.
+      return [{ type: "paragraph", content: [{ type: "text", text: "⟦PROCEDURE_HUB_TOC⟧" }] }];
     default: {
-      // AUDIO, FILE, EMBED, DIAGRAM, TABLE_OF_CONTENTS, PAGE_LINK,
-      // SYNCED_BLOCK_SOURCE, SYNCED_BLOCK_REFERENCE: no ProseMirror
-      // equivalent yet. Emit a placeholder paragraph so publish never
+      // AUDIO, FILE, EMBED, DIAGRAM, PAGE_LINK, SYNCED_BLOCK_SOURCE,
+      // SYNCED_BLOCK_REFERENCE: no ProseMirror equivalent yet. Emit a
+      // placeholder paragraph so publish never
       // crashes on a block type the old schema can't represent.
       return [{ type: "paragraph", content: [{ type: "text", text: `[${block.type.toLowerCase()}]` }] }];
     }

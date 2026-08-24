@@ -8,6 +8,7 @@ import type { BlockType } from "@prisma/client";
 import {
   Type, Heading1, Heading2, Heading3, List, ListOrdered, CheckSquare,
   ChevronRight, Quote, Megaphone, Code, Table as TableIcon, Minus, Image as ImageIcon, Video,
+  ListTree,
 } from "lucide-react";
 
 /**
@@ -47,6 +48,12 @@ export const BLOCK_COMMANDS: CommandItem[] = [
   { title: "Divisore", description: "Linea orizzontale", aliases: "divider hr divisore linea", icon: Minus, type: "DIVIDER" },
   { title: "Immagine", description: "Immagine da URL", aliases: "image immagine foto", icon: ImageIcon, type: "IMAGE" },
   { title: "Video", description: "Video YouTube", aliases: "video youtube", icon: Video, type: "VIDEO" },
+  // Renders a live, always-current list of the document's own H1/H2/H3 —
+  // computed by BlockEditor from its own sibling blocks (block-editor.tsx),
+  // not stored content of its own. At publish time it becomes a real list
+  // of anchor links (lib/blocks/serialize.ts + lib/toc.ts), same ids the
+  // floating reading outline on the procedure page uses.
+  { title: "Indice", description: "Elenco dei titoli del documento", aliases: "toc indice sommario table of contents", icon: ListTree, type: "TABLE_OF_CONTENTS" },
 ];
 
 const SlashMenu = forwardRef(function SlashMenu(

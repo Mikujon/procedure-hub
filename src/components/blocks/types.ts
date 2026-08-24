@@ -9,3 +9,16 @@ export interface ClientBlock {
   sortOrder: number;
   children: ClientBlock[];
 }
+
+/** One heading a TABLE_OF_CONTENTS block lists, computed live in block-editor.tsx from sibling blocks. */
+export interface DocumentHeading {
+  blockId: string;
+  level: 1 | 2 | 3;
+  text: string;
+}
+
+/** Flattens a block's inline-rich-text content (Block.content.text, a ProseMirror inline node array) into plain text — used to build DocumentHeading[] without spinning up a full Tiptap instance just to read text back out. */
+export function extractPlainText(nodes: any[] | undefined): string {
+  if (!nodes) return "";
+  return nodes.map((n) => (typeof n.text === "string" ? n.text : extractPlainText(n.content))).join("");
+}

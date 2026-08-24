@@ -5,8 +5,8 @@ import Link from "next/link";
 import type { HocuspocusProvider } from "@hocuspocus/provider";
 import type * as Y from "yjs";
 import type { BlockType } from "@prisma/client";
-import { ChevronRight, GripVertical, Plus, MoreHorizontal, Copy, Trash2, FileText } from "lucide-react";
-import type { ClientBlock } from "./types";
+import { ChevronRight, GripVertical, Plus, MoreHorizontal, Copy, Trash2, FileText, ListTree } from "lucide-react";
+import type { ClientBlock, DocumentHeading } from "./types";
 import { InlineRichText } from "./inline-rich-text";
 import { CodeBlock, DividerBlock, ImageBlock, TableSimpleBlock, VideoBlock } from "./media-blocks";
 import { BLOCK_COMMANDS } from "./slash-command-menu";
@@ -37,6 +37,8 @@ interface BlockRendererProps {
   onDelete: (blockId: string) => void;
   onDuplicate: (blockId: string) => void;
   onTurnInto: (blockId: string, type: BlockType) => void;
+  /** Document-level H1/H2/H3, computed once in block-editor.tsx — only read by a TABLE_OF_CONTENTS block. */
+  documentHeadings: DocumentHeading[];
   dragHandleProps?: any;
 }
 
@@ -58,7 +60,7 @@ const HEADING_CLASS: Partial<Record<BlockType, string>> = {
 };
 
 export function BlockRenderer(props: BlockRendererProps) {
-  const { block, editable, getFragment, provider, user, onTextChange, onContentChange, onSelectBlockType, onEnter, onBackspaceEmpty, onDelete, onDuplicate, onTurnInto } = props;
+  const { block, editable, getFragment, provider, user, onTextChange, onContentChange, onSelectBlockType, onEnter, onBackspaceEmpty, onDelete, onDuplicate, onTurnInto, documentHeadings } = props;
   const [toggleOpen, setToggleOpen] = useState(true);
 
   const text = () => (
@@ -144,6 +146,36 @@ export function BlockRenderer(props: BlockRendererProps) {
         </div>
       );
       break;
+    case "TABLE_OF_CONTENTS":
+      body = (
+        <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
+          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <ListTree className="h-3.5 w-3.5" /> Indice del documento
+          </div>
+          {documentHeadings.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nessun titolo nel documento — aggiungine uno per popolare l&apos;indice.</p>
+          ) : (
+            <nav className="space-y-0.5">
+              {documentHeadings.map((h) => (
+                <button
+                  key={h.blockId}
+                  type="button"
+                  onClick={() =>
+                    document
+                      .querySelector(`[data-block-id="${h.blockId}"]`)
+                      ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                  }
+                  style={{ paddingLeft: `${(h.level - 1) * 0.9}rem` }}
+                  className="block w-full truncate text-left text-sm text-primary hover:underline"
+                >
+                  {h.text}
+                </button>
+              ))}
+            </nav>
+          )}
+        </div>
+      );
+      break;
     case "DIVIDER":
       body = <DividerBlock />;
       break;
@@ -174,7 +206,7 @@ export function BlockRenderer(props: BlockRendererProps) {
       );
       break;
     default:
-      // COLUMN_LIST, COLUMN, EMBED, DIAGRAM, AUDIO, FILE, TABLE_OF_CONTENTS,
+      // COLUMN_LIST, COLUMN, EMBED, DIAGRAM, AUDIO, FILE,
       // SYNCED_BLOCK_*: not yet supported by this editor pass —
       // shown as a placeholder rather than crashing, deletable so it
       // doesn't block editing the rest of the page.
