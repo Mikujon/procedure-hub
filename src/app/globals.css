@@ -193,3 +193,27 @@ body {
 /* Prose blocks rendered read-only (procedure detail) share the editor look */
 .prose :where(h1, h2, h3) { font-family: var(--font-display); letter-spacing: -0.01em; }
 .prose :where(a) { color: hsl(var(--primary)); }
+
+/* Inline TABLE_OF_CONTENTS block, spliced into contentHtml at read time by
+   lib/toc.ts (replacing the sentinel paragraph lib/blocks/serialize.ts
+   emits) — links to the same heading anchor ids that same pass assigns. */
+.prose .toc-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--muted) / 0.3);
+  padding: 0.75rem 1rem;
+  margin: 1em 0;
+}
+.prose .toc-block a {
+  color: hsl(var(--primary));
+  text-decoration: none;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.prose .toc-block a:hover { text-decoration: underline; }
+.prose .toc-block a[data-toc-level="2"] { padding-left: 0.9rem; }
+.prose .toc-block a[data-toc-level="3"] { padding-left: 1.8rem; font-size: 0.8125rem; }
+.prose .toc-block-empty { color: hsl(var(--muted-foreground)); font-size: 0.875rem; }

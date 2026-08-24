@@ -21,6 +21,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
 import { stripHtml } from "@/lib/search";
+import { renderContentWithToc } from "@/lib/toc";
+import { ReadingOutline } from "@/components/procedures/reading-outline";
 import { Pencil, History, MessageSquare, Lock } from "lucide-react";
 
 export default async function ProcedurePage({ params }: { params: { id: string } }) {
@@ -86,7 +88,14 @@ export default async function ProcedurePage({ params }: { params: { id: string }
     globalRole === "ADMIN" || globalRole === "COMPLIANCE_OFFICER" || procedure.ownerId === userId;
 
   const commentCount = procedure.comments.reduce((n, c) => n + 1 + c.replies.length, 0);
-  const contentText = stripHtml(procedure.currentVersion?.contentHtml ?? "");
+  // One pass over the rendered HTML: assigns heading anchor ids (read by
+  // both the floating outline below and "#anchor" links from the outside),
+  // and splices any TABLE_OF_CONTENTS block's sentinel into a real list of
+  // links to those same anchors — see lib/toc.ts.
+  const { html: renderedContentHtml, headings: tocHeadings } = renderContentWithToc(
+    procedure.currentVersion?.contentHtml ?? "<p>Nessun contenuto ancora.</p>"
+  );
+  const contentText = stripHtml(renderedContentHtml);
 
   return (
     <ProcedureViewShell>
@@ -154,7 +163,7 @@ export default async function ProcedurePage({ params }: { params: { id: string }
           <Card>
             <CardContent
               className="prose prose-sm max-w-none py-5"
-              dangerouslySetInnerHTML={{ __html: procedure.currentVersion?.contentHtml ?? "<p>Nessun contenuto ancora.</p>" }}
+              dangerouslySetInnerHTML={{ __html: renderedContentHtml }}
             />
           </Card>
 
@@ -205,6 +214,8 @@ export default async function ProcedurePage({ params }: { params: { id: string }
         </div>
 
         <aside className="space-y-4">
+          <ReadingOutline headings={tocHeadings} />
+
           <WorkflowPanel
             procedureId={procedure.id}
             status={procedure.status}
