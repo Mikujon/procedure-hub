@@ -212,6 +212,54 @@ export function BlockEditor({ parent, initialBlocks, editable, collabToken, user
     []
   );
 
+  /** "Duplica blocco" (per-block ⋮ menu) — same insert-after shape as handleSelectBlockTypeImpl, but carries the source block's own content/type instead of a fresh default. Nested children aren't copied (rare in practice — only TOGGLE_LIST_ITEM and list items nest today — and doubling the recursion here isn't worth it for a first pass). */
+  const handleDuplicateImpl = useCallback(
+    (blockId: string) => {
+      setFlat((prev) => {
+        const source = prev.find((b) => b.id === blockId);
+        if (!source) return prev;
+        const insertOrder = source.sortOrder + 1;
+        const shifted = prev.map((b) =>
+          b.parentBlockId === source.parentBlockId && b.sortOrder >= insertOrder && b.id !== source.id
+            ? { ...b, sortOrder: b.sortOrder + 1 }
+            : b
+        );
+
+        api(createBlockEndpoint, {
+          method: "POST",
+          body: JSON.stringify({
+            type: source.type,
+            content: source.content,
+            parentBlockId: source.parentBlockId,
+            sortOrder: insertOrder,
+          }),
+        })
+          .then(({ block }) => {
+            setFlat((cur) => [
+              ...cur,
+              {
+                id: block.id,
+                type: block.type,
+                content: block.content,
+                parentBlockId: block.parentBlockId,
+                sortOrder: block.sortOrder,
+              },
+            ]);
+          })
+          .catch(() => {});
+
+        return shifted;
+      });
+    },
+    [createBlockEndpoint]
+  );
+
+  /** "Trasforma in" (per-block ⋮ menu) — changes a block's type in place, keeping its content (e.g. a paragraph's text survives becoming a heading). Distinct from the slash command, which always inserts a new block instead. */
+  const handleTurnIntoImpl = useCallback((blockId: string, type: BlockType) => {
+    setFlat((prev) => prev.map((b) => (b.id === blockId ? { ...b, type } : b)));
+    api(`/api/blocks/${blockId}`, { method: "PATCH", body: JSON.stringify({ type }) }).catch(() => {});
+  }, []);
+
   // Stable identities for everything handed down into a per-block Tiptap
   // instance — see useStableCallback's doc comment for why this matters.
   const onTextChange = useStableCallback(handleTextChangeImpl);
@@ -220,6 +268,8 @@ export function BlockEditor({ parent, initialBlocks, editable, collabToken, user
   const onEnter = useStableCallback(handleEnterImpl);
   const onBackspaceEmpty = useStableCallback(handleBackspaceEmptyImpl);
   const onDelete = useStableCallback(handleDeleteImpl);
+  const onDuplicate = useStableCallback(handleDuplicateImpl);
+  const onTurnInto = useStableCallback(handleTurnIntoImpl);
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
@@ -298,6 +348,8 @@ export function BlockEditor({ parent, initialBlocks, editable, collabToken, user
               onEnter={onEnter}
               onBackspaceEmpty={onBackspaceEmpty}
               onDelete={onDelete}
+              onDuplicate={onDuplicate}
+              onTurnInto={onTurnInto}
             />
           ))}
         </SortableContext>

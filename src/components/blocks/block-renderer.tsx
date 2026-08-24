@@ -5,10 +5,21 @@ import Link from "next/link";
 import type { HocuspocusProvider } from "@hocuspocus/provider";
 import type * as Y from "yjs";
 import type { BlockType } from "@prisma/client";
-import { ChevronRight, GripVertical, Trash2, FileText } from "lucide-react";
+import { ChevronRight, GripVertical, Plus, MoreHorizontal, Copy, Trash2, FileText } from "lucide-react";
 import type { ClientBlock } from "./types";
 import { InlineRichText } from "./inline-rich-text";
 import { CodeBlock, DividerBlock, ImageBlock, TableSimpleBlock, VideoBlock } from "./media-blocks";
+import { BLOCK_COMMANDS } from "./slash-command-menu";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface BlockRendererProps {
   block: ClientBlock;
@@ -24,8 +35,18 @@ interface BlockRendererProps {
   onEnter: (blockId: string) => void;
   onBackspaceEmpty: (blockId: string) => void;
   onDelete: (blockId: string) => void;
+  onDuplicate: (blockId: string) => void;
+  onTurnInto: (blockId: string, type: BlockType) => void;
   dragHandleProps?: any;
 }
+
+/** "Trasforma in" (per-block ⋮ menu) offers only text-shaped blocks — reusing BLOCK_COMMANDS' full catalogue (icons/labels stay in one place) but leaving out media/structural types (IMAGE, VIDEO, CODE, TABLE_SIMPLE, DIVIDER) that aren't a sensible target for turning an existing block's content into. */
+const TURN_INTO_TYPES: BlockType[] = [
+  "PARAGRAPH", "HEADING_1", "HEADING_2", "HEADING_3",
+  "BULLETED_LIST_ITEM", "NUMBERED_LIST_ITEM", "CHECKLIST_ITEM", "TOGGLE_LIST_ITEM",
+  "QUOTE", "CALLOUT",
+];
+const TURN_INTO_ITEMS = BLOCK_COMMANDS.filter((c) => TURN_INTO_TYPES.includes(c.type));
 
 // font-serif here (pre-Control Room) meant headings typed *inside* content
 // never picked up the brand's own display face — everything around the
@@ -37,7 +58,7 @@ const HEADING_CLASS: Partial<Record<BlockType, string>> = {
 };
 
 export function BlockRenderer(props: BlockRendererProps) {
-  const { block, editable, getFragment, provider, user, onTextChange, onContentChange, onSelectBlockType, onEnter, onBackspaceEmpty, onDelete } = props;
+  const { block, editable, getFragment, provider, user, onTextChange, onContentChange, onSelectBlockType, onEnter, onBackspaceEmpty, onDelete, onDuplicate, onTurnInto } = props;
   const [toggleOpen, setToggleOpen] = useState(true);
 
   const text = () => (
@@ -196,13 +217,45 @@ export function BlockRenderer(props: BlockRendererProps) {
         )}
       </div>
       {editable && (
-        <button
-          type="button"
-          onClick={() => onDelete(block.id)}
-          className="mt-1 shrink-0 text-transparent hover:text-destructive group-hover:text-muted-foreground"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
+        <div className="flex shrink-0 items-start gap-0.5 opacity-0 group-hover:opacity-100">
+          <button
+            type="button"
+            onClick={() => onSelectBlockType(block.id, "PARAGRAPH")}
+            title="Aggiungi blocco sotto"
+            className="mt-1 text-muted-foreground hover:text-foreground"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" title="Azioni blocco" className="mt-1 text-muted-foreground hover:text-foreground">
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onClick={() => onDuplicate(block.id)}>
+                <Copy className="h-4 w-4 text-muted-foreground" /> Duplica blocco
+              </DropdownMenuItem>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>Trasforma in</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  {TURN_INTO_ITEMS.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <DropdownMenuItem key={item.type} onClick={() => onTurnInto(block.id, item.type)}>
+                        <Icon className="h-4 w-4 text-muted-foreground" /> {item.title}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => onDelete(block.id)} className="text-destructive focus:text-destructive">
+                <Trash2 className="h-4 w-4" /> Elimina
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       )}
     </div>
   );
