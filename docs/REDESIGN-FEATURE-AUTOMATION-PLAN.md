@@ -556,11 +556,96 @@ pulito, `npm test` 49/49 (7 nuovi). Dati di test (procedure duplicate di
 prova) rimossi a fine verifica — la procedura seed reale non è mai stata
 toccata, solo corretta nel file sorgente e ri-seedata.
 
-Non fatto in questa sessione, per scelta (stessa logica di 4.1: un
+Non fatto nella stessa sessione, per scelta (stessa logica di 4.1: un
 pilastro verificato bene batte lavoro sparso): altri tipi di blocco
-Notion-standard ancora assenti (`EMBED`, `DIAGRAM`, `COLUMN_LIST`/
-`COLUMN` per layout a colonne), e un vero bookmark PDF/Word per il
-blocco TOC esportato (oggi è un elenco puntato semplice, vedi sopra).
+Notion-standard, vedi 4.3 sotto (fatta subito dopo) — e un vero bookmark
+PDF/Word per il blocco TOC esportato (resta un elenco puntato semplice).
+
+### 4.3 `EMBED`, `DIAGRAM` (Mermaid), `COLUMN_LIST`/`COLUMN` — **fatta, 24 ago 2026**
+
+I tre tipi di blocco Notion-standard rimasti (oltre `TABLE_OF_CONTENTS`,
+4.2). Stesso pattern "segnaposto sentinella in `contentHtml`, sostituito
+da un passaggio successivo" già usato per TOC, esteso a due varianti
+nuove:
+
+**`EMBED`** — qualunque URL che renda in un iframe (Figma, Google Docs,
+Loom, Miro, CodePen, …), non legato a un provider specifico come già
+faceva `VIDEO`/YouTube. Link "Apri in una nuova scheda ↗" sempre
+presente, perché non c'è modo affidabile di sapere in anticipo se un
+host rifiuta di essere incorporato (`X-Frame-Options`) prima di
+provarci. `lib/blocks/serialize.ts` emette `⟦PROCEDURE_HUB_EMBED:<url>⟧`;
+il nuovo `lib/embedded-blocks.ts` (`injectEmbedIframes`) lo sostituisce
+con un `<iframe>` reale — puro HTML statico, nessun hydration
+client-side necessaria (stesso livello di fiducia che il nodo Youtube di
+Tiptap ottiene già per `VIDEO` nella stessa pipeline).
+
+**`DIAGRAM`** (Mermaid) — probabilmente il tipo di blocco con più valore
+reale per un "Procedure Hub": i flowchart per i processi di
+approvazione/escalation che le procedure già descrivono in prosa, ora
+disegnabili. Nuova dipendenza `mermaid`. Anteprima dal vivo nell'editor
+(`DiagramBlock` in `media-blocks.tsx`, import dinamico — mermaid
+richiede un DOM reale — con debounce 500ms per non ri-validare la
+sintassi a ogni tasto). Diversamente da `EMBED`, Mermaid richiede un
+browser vero per il layout: `serialize.ts` incorpora il sorgente
+codificato base64 nel segnaposto (sicuro contro l'escaping HTML del
+proprio nodo testo e contro caratteri speciali nel sorgente),
+`injectDiagramPlaceholders` lo trasforma in un `<pre
+class="mermaid-source">` provvisorio, e il nuovo componente client
+`components/procedures/mermaid-renderer.tsx` (montato una volta sulla
+pagina procedura) lo trova dopo il mount e lo sostituisce con l'SVG
+reale. **Verificato dal vivo con un'attenzione in più**: un primo giro
+con un'attesa di 1.5s dopo il caricamento della pagina pubblicata
+mostrava lo stub "Caricamento diagramma…" ancora presente — non un bug,
+semplicemente l'import dinamico di un pacchetto client pesante non
+aveva ancora finito; con 4s di attesa l'SVG compare correttamente. Non
+un problema in produzione (il caricamento del bundle mermaid è una
+tantum per sessione browser), ma buono da sapere per chi verifica di
+nuovo con Playwright: non affidarsi a un'attesa fissa breve dopo un
+primo caricamento a freddo.
+
+**`COLUMN_LIST`/`COLUMN`** — già flatten-at-publish da prima (vedi sopra
+in questo piano), ma **mai renderizzabile/inseribile nell'editor
+live** fino ad ora. `block-renderer.tsx`: `COLUMN_LIST` come riga
+`grid` (una colonna per ogni `COLUMN` figlio), `COLUMN` come stack
+verticale con un proprio "+ Aggiungi blocco" — la prima vera necessità
+in questo codebase di aggiungere un blocco come *figlio* di un blocco
+esistente invece che come fratello dopo di esso (il "+" per-blocco
+esistente inserisce sempre un fratello). Nuovo `onAddChild` in
+`block-editor.tsx`; `/colonne` crea un `COLUMN_LIST` con 2 `COLUMN`
+vuote (default Notion per "dividi in colonne"). Il menu "⋮" per-blocco
+nasconde Duplica/Trasforma-in su questi due tipi (semantica non chiara
+per un contenitore di layout: duplicare non copierebbe i figli,
+comunque una limitazione nota di `onDuplicate`; trasformare un
+`COLUMN_LIST` in un'intestazione orfanizzerebbe le sue `COLUMN` — restano
+comunque puntate a un blocco che non è più quello) — Elimina resta,
+unico modo per rimuovere un layout.
+
+**Bug reale trovato costruendo questo pezzo, non specifico alle
+colonne**: `handleDeleteImpl`/`handleBackspaceEmptyImpl`
+(`block-editor.tsx`) rimuovevano dallo stato client solo i figli
+*diretti* del blocco eliminato — il database cascata correttamente ogni
+discendente (`Block.parentBlockId` è `onDelete: Cascade`), ma un nipote
+(un blocco dentro una `COLUMN` la cui `COLUMN_LIST` viene eliminata)
+sopravviveva nello stato React e si ri-agganciava come blocco radice
+orfano nell'albero renderizzato, finché non si ricaricava la pagina.
+Corretto con un nuovo `collectDescendantIds()` condiviso (rimozione
+ricorsiva reale, non solo un livello) — colpisce anche
+`TOGGLE_LIST_ITEM`/liste annidate pre-esistenti, non solo `COLUMN_LIST`.
+
+Verificato dal vivo (Playwright): inserimento dei tre tipi via slash
+command su una procedura duplicata con contenuto reale, diagramma
+Mermaid con anteprima live nell'editor (flowchart reale con nodi e
+frecce, non solo testo), due colonne con contenuto indipendente in
+ciascuna, pubblicazione e conferma che la pagina letta mostri l'iframe
+reale, l'SVG del diagramma renderizzato (non il segnaposto), il
+contenuto delle colonne (flatten, come da comportamento esistente) — e
+nessun testo sentinella (`PROCEDURE_HUB_EMBED`/`_DIAGRAM`) trapelato,
+né nella pagina né nell'export PDF/Word/Excel (`lib/export/content-blocks.ts`
+riconosce lo stesso marcatore Diagram ed esporta il sorgente Mermaid
+come blocco di codice etichettato, non il marcatore grezzo). `npx tsc
+--noEmit` pulito, `npm test` 56/56 (7 nuovi su
+`injectEmbedIframes`/`injectDiagramPlaceholders`). Dati di test rimossi
+a fine verifica.
 
 ---
 

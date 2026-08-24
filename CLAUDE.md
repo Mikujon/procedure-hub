@@ -131,6 +131,32 @@ prisma/seed.ts                  dati demo (dipartimenti, utenti, ruoli, una proc
 del codice/UI reali — la cronologia sotto mostra quanto spesso questo file
 si è disallineato in passato.*
 
+**24 ago 2026 (4)**: Traccia 4.3 — gli ultimi tre tipi di blocco
+Notion-standard: `EMBED` (qualunque URL iframe-abile, non solo YouTube),
+`DIAGRAM` (Mermaid — anteprima live nell'editor con import dinamico,
+nuova dipendenza `mermaid`; sul lato lettura un componente client,
+`mermaid-renderer.tsx`, idrata il sorgente base64 in un SVG reale dopo
+il mount, perché a differenza di `EMBED` non c'è equivalente
+server-side), `COLUMN_LIST`/`COLUMN` (layout a 2 colonne, `/colonne` —
+prima esistevano solo come `BlockType` mai renderizzabili/inseribili;
+prima vera necessità di aggiungere un blocco come *figlio* di un
+blocco esistente, non solo come fratello — nuovo `onAddChild` in
+`block-editor.tsx`). Stesso pattern segnaposto-sentinella già usato per
+`TABLE_OF_CONTENTS` (4.2), esteso a due varianti (iframe statico per
+EMBED, hydration client per DIAGRAM). **Bug reale trovato non specifico
+alle colonne**: eliminare un blocco rimuoveva dallo stato client solo i
+figli diretti, non ogni discendente — il database cascata
+correttamente, ma un nipote (blocco dentro una colonna la cui
+`COLUMN_LIST` viene eliminata) sopravviveva come blocco radice orfano
+fino al reload; stesso gap pre-esistente su Toggle/liste annidate.
+Corretto con un `collectDescendantIds()` condiviso. Verificato dal vivo
+(Playwright): diagramma Mermaid reale con nodi/frecce nell'editor,
+pubblicato e confermato che l'SVG (non il segnaposto) compaia in
+lettura — attenzione per chi riverifica: il primo caricamento del
+bundle `mermaid` nel browser richiede qualche secondo, non affidarsi a
+un'attesa fissa breve. `npm test` 56/56 (7 nuovi). Dettagli completi in
+Traccia 4.3 del piano.
+
 **24 ago 2026 (2)**: Traccia 4 avviata in
 `docs/REDESIGN-FEATURE-AUTOMATION-PLAN.md` — parità UX con Notion sulla
 pagina procedura, identità visiva Control Room invariata (richiesta
