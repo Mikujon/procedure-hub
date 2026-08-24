@@ -12,6 +12,9 @@ export async function GET() {
 
   const tenantId = (session.user as any).tenantId as string;
 
+  const now = Date.now();
+  const STALE_AFTER_MS = 90 * 24 * 60 * 60 * 1000;
+
   const [
     totalProcedures,
     byStatus,
@@ -19,6 +22,8 @@ export async function GET() {
     activeUsers,
     upcomingReviews,
     mostViewedTags,
+    ackCampaigns,
+    pagesNeedingVerification,
   ] = await Promise.all([
     prisma.procedure.count({ where: { tenantId } }),
     prisma.procedure.groupBy({ by: ["status"], where: { tenantId }, _count: true }),
@@ -28,7 +33,7 @@ export async function GET() {
       where: {
         tenantId,
         status: "PUBLISHED",
-        nextReviewDate: { lte: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+        nextReviewDate: { lte: new Date(now + 30 * 24 * 60 * 60 * 1000) },
       },
       select: { id: true, title: true, nextReviewDate: true, department: { select: { name: true } } },
       orderBy: { nextReviewDate: "asc" },
@@ -40,17 +45,42 @@ export async function GET() {
       orderBy: { procedures: { _count: "desc" } },
       take: 8,
     }),
+    // % of Read & Acknowledge campaigns completed, for procedures that
+    // still require one — only the campaign matching the procedure's
+    // *current* version counts, a superseded campaign from an older
+    // version isn't "still open" even if it never hit 100%.
+    prisma.ackCampaign.findMany({
+      where: { tenantId, procedure: { requiresAck: true } },
+      select: { versionNumber: true, completedAt: true, procedure: { select: { currentVersion: { select: { versionNumber: true } } } } },
+    }),
+    // Pages "da verificare" (2.4): never verified, or stale beyond the same
+    // 90-day threshold the badge on the page itself uses.
+    prisma.page.count({
+      where: {
+        tenantId,
+        isArchived: false,
+        OR: [{ lastVerifiedAt: null }, { lastVerifiedAt: { lt: new Date(now - STALE_AFTER_MS) } }],
+      },
+    }),
   ]);
 
   const departments = await prisma.department.findMany({ where: { tenantId }, select: { id: true, name: true } });
   const deptMap = Object.fromEntries(departments.map((d) => [d.id, d.name]));
+
+  const currentAckCampaigns = ackCampaigns.filter((c) => c.versionNumber === c.procedure.currentVersion?.versionNumber);
+  const completedAckCampaigns = currentAckCampaigns.filter((c) => c.completedAt !== null);
+  const ackCompletionRate =
+    currentAckCampaigns.length > 0 ? Math.round((completedAckCampaigns.length / currentAckCampaigns.length) * 100) : null;
 
   return NextResponse.json({
     totalProcedures,
     activeUsers,
     byStatus: byStatus.map((s) => ({ status: s.status, count: s._count })),
     byDepartment: byDepartment.map((d) => ({ department: deptMap[d.departmentId], count: d._count })),
-    upcomingReviews,
+    upcomingReviews: upcomingReviews.map((p) => ({ ...p, overdue: p.nextReviewDate !== null && p.nextReviewDate.getTime() < now })),
     topTags: mostViewedTags.map((t) => ({ name: t.name, count: t._count.procedures })),
+    ackCompletionRate,
+    ackCampaignCount: currentAckCampaigns.length,
+    pagesNeedingVerification,
   });
 }

@@ -2,17 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import { FileText, Users, AlertTriangle } from "lucide-react";
+import { FileText, Users, AlertTriangle, CheckCheck, ShieldAlert } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CountUp } from "@/components/ui/count-up";
+import { cn } from "@/lib/utils";
 
 interface KpiData {
   totalProcedures: number;
   activeUsers: number;
   byStatus: { status: string; count: number }[];
   byDepartment: { department: string; count: number }[];
-  upcomingReviews: { id: string; title: string; nextReviewDate: string; department: { name: string } }[];
+  upcomingReviews: { id: string; title: string; nextReviewDate: string; department: { name: string }; overdue: boolean }[];
   topTags: { name: string; count: number }[];
+  ackCompletionRate: number | null;
+  ackCampaignCount: number;
+  pagesNeedingVerification: number;
 }
 
 // Derived from the same CSS variables as the rest of the UI (globals.css) —
@@ -64,6 +68,14 @@ export function AdminDashboard() {
           value={data.byStatus.find((s) => s.status === "PUBLISHED")?.count ?? 0}
           accent="success"
         />
+        <StatCard
+          icon={CheckCheck}
+          label={`Conferme lettura completate${data.ackCampaignCount > 0 ? ` (${data.ackCampaignCount})` : ""}`}
+          value={data.ackCompletionRate}
+          suffix="%"
+          accent={data.ackCompletionRate === null ? undefined : data.ackCompletionRate >= 100 ? "success" : "warning"}
+        />
+        <StatCard icon={ShieldAlert} label="Pagine da verificare" value={data.pagesNeedingVerification} accent={data.pagesNeedingVerification > 0 ? "warning" : "success"} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -113,9 +125,14 @@ export function AdminDashboard() {
                 <p className="font-medium">{p.title}</p>
                 <p className="text-xs text-muted-foreground">{p.department.name}</p>
               </div>
-              <span className="font-mono text-xs text-muted-foreground">
-                {new Date(p.nextReviewDate).toLocaleDateString("it-IT")}
-              </span>
+              <div className="flex items-center gap-2">
+                {p.overdue && (
+                  <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-medium text-destructive">Scaduta</span>
+                )}
+                <span className={cn("font-mono text-xs", p.overdue ? "text-destructive" : "text-muted-foreground")}>
+                  {new Date(p.nextReviewDate).toLocaleDateString("it-IT")}
+                </span>
+              </div>
             </div>
           ))}
           {data.upcomingReviews.length === 0 && (
@@ -131,11 +148,13 @@ function StatCard({
   icon: Icon,
   label,
   value,
+  suffix,
   accent,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
-  value: number;
+  value: number | null;
+  suffix?: string;
   accent?: "warning" | "success";
 }) {
   return (
@@ -146,7 +165,14 @@ function StatCard({
             accent === "warning" ? "text-[hsl(var(--stamp-amber))]" : accent === "success" ? "text-[hsl(var(--stamp-green))]" : "text-primary"
           }`}
         />
-        <p className="font-display text-2xl font-semibold"><CountUp value={value} /></p>
+        <p className="font-display text-2xl font-semibold">
+          {value === null ? "—" : (
+            <>
+              <CountUp value={value} />
+              {suffix}
+            </>
+          )}
+        </p>
         <p className="text-xs text-muted-foreground">{label}</p>
       </CardContent>
     </Card>
