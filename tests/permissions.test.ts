@@ -4,6 +4,7 @@ import {
   canViewProcedure,
   canEditProcedure,
   canPublishProcedure,
+  canMutateProcedureContent,
   canActOnComplianceStage,
   isTenantAdmin,
   canEditWorkspace,
@@ -93,6 +94,29 @@ describe("canEditProcedure / canPublishProcedure", () => {
     } finally {
       await other.cleanup();
     }
+  });
+});
+
+describe("canMutateProcedureContent (Blocca pagina)", () => {
+  it("unlocked: same as canEditProcedure — an EDITOR can mutate content", async () => {
+    expect(await canMutateProcedureContent(actor(t.editor), { departmentId: t.department.id, isLocked: false })).toBe(true);
+  });
+
+  it("locked: an EDITOR (who could edit but not publish) is frozen out", async () => {
+    expect(await canMutateProcedureContent(actor(t.editor), { departmentId: t.department.id, isLocked: true })).toBe(false);
+  });
+
+  it("locked: a DEPARTMENT_OWNER (who could publish) can still mutate content", async () => {
+    expect(await canMutateProcedureContent(actor(t.owner), { departmentId: t.department.id, isLocked: true })).toBe(true);
+  });
+
+  it("locked: ADMIN can still mutate content", async () => {
+    expect(await canMutateProcedureContent(actor(t.admin), { departmentId: t.department.id, isLocked: true })).toBe(true);
+  });
+
+  it("locked or not, someone with no edit rights at all stays rejected", async () => {
+    expect(await canMutateProcedureContent(actor(t.viewer), { departmentId: t.department.id, isLocked: false })).toBe(false);
+    expect(await canMutateProcedureContent(actor(t.viewer), { departmentId: t.department.id, isLocked: true })).toBe(false);
   });
 });
 
