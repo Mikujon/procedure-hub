@@ -54,7 +54,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   // COMMENT_ADDED automations (3.4) — same "await inline, never throws to
   // the caller" convention as runStatusAutomations/runAckCompletionAutomations
   // (fireRule swallows its own execution errors into AutomationRun.error).
-  await runCommentAddedAutomations(tenantId, procedure.id);
+  // fireKey = the comment's own id (3.5) — stable and unique per comment.
+  await runCommentAddedAutomations(tenantId, procedure.id, comment.id);
 
   if (mentionedUserIds?.length) {
     // Re-validate server-side — the client's picker only offers tenant

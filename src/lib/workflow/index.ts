@@ -32,7 +32,7 @@ export async function submitForReview(procedureId: string, actorId: string) {
 
   const nextStage = await resolveNextStage(procedure.id, "DRAFT", procedure.isCritical);
 
-  await prisma.$transaction([
+  const [, step] = await prisma.$transaction([
     prisma.procedure.update({
       where: { id: procedureId },
       data: { status: nextStage },
@@ -60,7 +60,9 @@ export async function submitForReview(procedureId: string, actorId: string) {
     title: `"${procedure.title}" awaiting ${nextStage.replace("_", " ").toLowerCase()}`,
   });
 
-  await runStatusAutomations(procedure.tenantId, procedureId, nextStage);
+  // fireKey = the WorkflowStep row just created (3.5): stable across a
+  // retry of this same submit, distinct from any later resubmission cycle.
+  await runStatusAutomations(procedure.tenantId, procedureId, nextStage, step.id);
 
   return nextStage;
 }
@@ -92,7 +94,9 @@ export async function decideWorkflowStep(
       procedureId: step.procedureId,
       title: `"${step.procedure.title}" was rejected at ${step.stage.replace("_", " ").toLowerCase()}`,
     });
-    await runStatusAutomations(step.procedure.tenantId, step.procedureId, "REJECTED");
+    // fireKey = the WorkflowStep being decided (3.5): a given step is
+    // decided once in the real flow, so its own id is stable-and-unique.
+    await runStatusAutomations(step.procedure.tenantId, step.procedureId, "REJECTED", step.id);
     return "REJECTED" as const;
   }
 
@@ -122,7 +126,8 @@ export async function decideWorkflowStep(
         : `"${step.procedure.title}" awaiting ${nextStage.replace("_", " ").toLowerCase()}`,
   });
 
-  await runStatusAutomations(step.procedure.tenantId, step.procedureId, nextStage);
+  // Same WorkflowStep as above — one decision per step in the real flow.
+  await runStatusAutomations(step.procedure.tenantId, step.procedureId, nextStage, step.id);
 
   // The search index (and any AI retrieval built on it) filters on
   // status = PUBLISHED — reaching PUBLISHED only via a content save
@@ -182,7 +187,7 @@ export async function archiveProcedure(
     where: { id: procedureId },
     data: { status: "ARCHIVED", archivedAt: new Date() },
   });
-  await prisma.auditLog.create({
+  const auditLog = await prisma.auditLog.create({
     data: {
       tenantId: procedure.tenantId,
       actorId,
@@ -202,6 +207,8 @@ export async function archiveProcedure(
   // this guard, a rule that archives on ARCHIVED would re-fire itself and
   // every other ARCHIVED-triggered rule on every archive, forever.
   if (!opts?.skipAutomations) {
-    await runStatusAutomations(procedure.tenantId, procedureId, "ARCHIVED");
+    // fireKey = the AuditLog row just written (3.5): a fresh, stable id per
+    // real archive call, no WorkflowStep created on this path to reuse.
+    await runStatusAutomations(procedure.tenantId, procedureId, "ARCHIVED", auditLog.id);
   }
 }

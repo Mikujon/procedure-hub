@@ -110,5 +110,8 @@ async function maybeCompleteCampaign(procedureId: string, versionNumber: number)
   // Owner notification above is unconditional and always was. This is the
   // admin-configurable extra layer: a rule can broadcast "100% read" to a
   // whole department or the tenant, not just the one owner.
-  await runAckCompletionAutomations(campaign.tenantId, procedureId);
+  // fireKey = the campaign's own id (3.5): completedAt is set once per
+  // campaign, so this dedupes a race where two concurrent acknowledgments
+  // both cross the 100% threshold and both reach this call.
+  await runAckCompletionAutomations(campaign.tenantId, procedureId, campaign.id);
 }

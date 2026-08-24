@@ -69,13 +69,13 @@ describe("matchesConditions", () => {
   });
 });
 
-describe("runStatusAutomations — PROCEDURE_STATUS_ENTERED, event-driven, history only (no real dedup)", () => {
+describe("runStatusAutomations — PROCEDURE_STATUS_ENTERED, event-driven, real dedup via caller-supplied fireKey (3.5)", () => {
   it("fires only for rules whose triggerConfig.status matches the entered status", async () => {
     const rulePublished = await createRule({ triggerType: "PROCEDURE_STATUS_ENTERED", triggerConfig: { status: "PUBLISHED" } });
     const ruleArchived = await createRule({ triggerType: "PROCEDURE_STATUS_ENTERED", triggerConfig: { status: "ARCHIVED" } });
     const p = await t.createProcedure();
 
-    await runStatusAutomations(t.tenant.id, p.id, "PUBLISHED");
+    await runStatusAutomations(t.tenant.id, p.id, "PUBLISHED", "step-1");
 
     expect(await runsFor(rulePublished.id)).toHaveLength(1);
     expect(await runsFor(ruleArchived.id)).toHaveLength(0);
@@ -90,19 +90,29 @@ describe("runStatusAutomations — PROCEDURE_STATUS_ENTERED, event-driven, histo
     const nonCritical = await t.createProcedure({ isCritical: false });
     const critical = await t.createProcedure({ isCritical: true });
 
-    await runStatusAutomations(t.tenant.id, nonCritical.id, "PUBLISHED");
+    await runStatusAutomations(t.tenant.id, nonCritical.id, "PUBLISHED", "step-nc");
     expect(await runsFor(rule.id)).toHaveLength(0);
 
-    await runStatusAutomations(t.tenant.id, critical.id, "PUBLISHED");
+    await runStatusAutomations(t.tenant.id, critical.id, "PUBLISHED", "step-c");
     expect(await runsFor(rule.id)).toHaveLength(1);
   });
 
-  it("documented gap: firing twice for the same entity creates two AutomationRun rows, not a deduped one (fireKey is crypto.randomUUID() every call)", async () => {
+  it("a retry with the same fireKey (e.g. a client double-submit deciding the same WorkflowStep twice) does not double-fire", async () => {
     const rule = await createRule({ triggerType: "PROCEDURE_STATUS_ENTERED", triggerConfig: { status: "PUBLISHED" } });
     const p = await t.createProcedure();
 
-    await runStatusAutomations(t.tenant.id, p.id, "PUBLISHED");
-    await runStatusAutomations(t.tenant.id, p.id, "PUBLISHED");
+    await runStatusAutomations(t.tenant.id, p.id, "PUBLISHED", "same-step-id");
+    await runStatusAutomations(t.tenant.id, p.id, "PUBLISHED", "same-step-id");
+
+    expect(await runsFor(rule.id)).toHaveLength(1);
+  });
+
+  it("a later, genuinely separate transition into the same status (different fireKey) fires again", async () => {
+    const rule = await createRule({ triggerType: "PROCEDURE_STATUS_ENTERED", triggerConfig: { status: "PUBLISHED" } });
+    const p = await t.createProcedure();
+
+    await runStatusAutomations(t.tenant.id, p.id, "PUBLISHED", "step-first-publish");
+    await runStatusAutomations(t.tenant.id, p.id, "PUBLISHED", "step-republish-after-revision");
 
     expect(await runsFor(rule.id)).toHaveLength(2);
   });
@@ -122,23 +132,33 @@ describe("runStatusAutomations — PROCEDURE_STATUS_ENTERED, event-driven, histo
     });
     const p = await t.createProcedure();
 
-    await runStatusAutomations(t.tenant.id, p.id, "PUBLISHED");
+    await runStatusAutomations(t.tenant.id, p.id, "PUBLISHED", "step-disabled");
     expect(await runsFor(rule.id)).toHaveLength(0);
   });
 });
 
-describe("runCommentAddedAutomations — event-driven (3.4)", () => {
+describe("runCommentAddedAutomations — event-driven (3.4), real dedup via the comment's own id as fireKey (3.5)", () => {
   it("fires for an enabled COMMENT_ADDED rule when a comment is posted on a matching procedure", async () => {
     const rule = await createRule({ triggerType: "COMMENT_ADDED" });
     const p = await t.createProcedure();
 
-    await runCommentAddedAutomations(t.tenant.id, p.id);
+    await runCommentAddedAutomations(t.tenant.id, p.id, "comment-1");
 
     const runs = await runsFor(rule.id);
     expect(runs).toHaveLength(1);
     expect(runs[0].status).toBe("SUCCESS");
     expect(runs[0].entityType).toBe("Procedure");
     expect(runs[0].entityId).toBe(p.id);
+  });
+
+  it("the same comment id never fires a rule twice", async () => {
+    const rule = await createRule({ triggerType: "COMMENT_ADDED" });
+    const p = await t.createProcedure();
+
+    await runCommentAddedAutomations(t.tenant.id, p.id, "comment-dup");
+    await runCommentAddedAutomations(t.tenant.id, p.id, "comment-dup");
+
+    expect(await runsFor(rule.id)).toHaveLength(1);
   });
 });
 
