@@ -22,7 +22,9 @@ import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
 import { stripHtml } from "@/lib/search";
 import { renderContentWithToc } from "@/lib/toc";
+import { injectEmbedIframes, injectDiagramPlaceholders } from "@/lib/embedded-blocks";
 import { ReadingOutline } from "@/components/procedures/reading-outline";
+import { MermaidRenderer } from "@/components/procedures/mermaid-renderer";
 import { Pencil, History, MessageSquare, Lock } from "lucide-react";
 
 export default async function ProcedurePage({ params }: { params: { id: string } }) {
@@ -88,17 +90,20 @@ export default async function ProcedurePage({ params }: { params: { id: string }
     globalRole === "ADMIN" || globalRole === "COMPLIANCE_OFFICER" || procedure.ownerId === userId;
 
   const commentCount = procedure.comments.reduce((n, c) => n + 1 + c.replies.length, 0);
-  // One pass over the rendered HTML: assigns heading anchor ids (read by
-  // both the floating outline below and "#anchor" links from the outside),
-  // and splices any TABLE_OF_CONTENTS block's sentinel into a real list of
-  // links to those same anchors — see lib/toc.ts.
-  const { html: renderedContentHtml, headings: tocHeadings } = renderContentWithToc(
-    procedure.currentVersion?.contentHtml ?? "<p>Nessun contenuto ancora.</p>"
-  );
+  // A pipeline over the rendered HTML: EMBED/DIAGRAM sentinels (see
+  // lib/blocks/serialize.ts) become a real <iframe> and a placeholder
+  // <pre> respectively (lib/embedded-blocks.ts — the diagram one needs
+  // MermaidRenderer below to actually render, client-side), then
+  // renderContentWithToc assigns heading anchor ids and splices any
+  // TABLE_OF_CONTENTS block's sentinel into links to those same anchors.
+  const withEmbeds = injectEmbedIframes(procedure.currentVersion?.contentHtml ?? "<p>Nessun contenuto ancora.</p>");
+  const withDiagrams = injectDiagramPlaceholders(withEmbeds);
+  const { html: renderedContentHtml, headings: tocHeadings } = renderContentWithToc(withDiagrams);
   const contentText = stripHtml(renderedContentHtml);
 
   return (
     <ProcedureViewShell>
+      <MermaidRenderer />
       <ProcedureBreadcrumb
         departmentId={procedure.department.id}
         departmentSlug={procedure.department.slug}

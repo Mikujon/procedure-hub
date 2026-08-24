@@ -217,3 +217,50 @@ body {
 .prose .toc-block a[data-toc-level="2"] { padding-left: 0.9rem; }
 .prose .toc-block a[data-toc-level="3"] { padding-left: 1.8rem; font-size: 0.8125rem; }
 .prose .toc-block-empty { color: hsl(var(--muted-foreground)); font-size: 0.875rem; }
+
+/* Inline EMBED block, spliced into contentHtml at read time by
+   lib/embedded-blocks.ts's injectEmbedIframes (replacing the sentinel
+   paragraph lib/blocks/serialize.ts emits) — a real <iframe>, same trust
+   level VIDEO's Tiptap Youtube node already gets in this same pipeline. */
+.prose .embed-block {
+  margin: 1em 0;
+}
+.prose .embed-block iframe {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+}
+.prose .embed-block a {
+  display: inline-block;
+  margin-top: 0.375rem;
+  font-size: 0.8125rem;
+  color: hsl(var(--primary));
+}
+
+/* Inline DIAGRAM block — the placeholder lib/embedded-blocks.ts's
+   injectDiagramPlaceholders leaves in contentHtml until
+   components/procedures/mermaid-renderer.tsx replaces it, client-side,
+   with a real rendered SVG (wrapped in .mermaid-diagram). */
+.prose pre.mermaid-source {
+  color: hsl(var(--muted-foreground));
+  font-size: 0.8125rem;
+  font-style: italic;
+  border: 1px dashed hsl(var(--border));
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  margin: 1em 0;
+  white-space: normal;
+}
+.prose pre.mermaid-source.mermaid-source-error { color: hsl(var(--destructive)); font-style: normal; }
+.prose .mermaid-diagram {
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+  margin: 1em 0;
+  padding: 0.5rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+}
+.prose .mermaid-diagram svg { max-width: 100%; height: auto; }
