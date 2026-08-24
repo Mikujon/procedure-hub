@@ -8,7 +8,7 @@ import type { BlockType } from "@prisma/client";
 import {
   Type, Heading1, Heading2, Heading3, List, ListOrdered, CheckSquare,
   ChevronRight, Quote, Megaphone, Code, Table as TableIcon, Minus, Image as ImageIcon, Video,
-  ListTree,
+  ListTree, Globe, Workflow, Columns2,
 } from "lucide-react";
 
 /**
@@ -54,6 +54,9 @@ export const BLOCK_COMMANDS: CommandItem[] = [
   // of anchor links (lib/blocks/serialize.ts + lib/toc.ts), same ids the
   // floating reading outline on the procedure page uses.
   { title: "Indice", description: "Elenco dei titoli del documento", aliases: "toc indice sommario table of contents", icon: ListTree, type: "TABLE_OF_CONTENTS" },
+  { title: "Incorpora", description: "Contenuto esterno (Figma, Google Docs, Loom, …)", aliases: "embed incorpora iframe figma loom", icon: Globe, type: "EMBED" },
+  { title: "Diagramma", description: "Flowchart Mermaid", aliases: "diagram diagramma mermaid flowchart schema", icon: Workflow, type: "DIAGRAM" },
+  { title: "Colonne", description: "Layout affiancato a 2 colonne", aliases: "colonne columns layout affiancato", icon: Columns2, type: "COLUMN_LIST" },
 ];
 
 const SlashMenu = forwardRef(function SlashMenu(

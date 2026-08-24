@@ -138,11 +138,34 @@ function blockToPMNodes(block: BlockWithChildren): PMNode[] {
       // TOC block and the floating reading outline always point at the
       // same anchors). TOC_BLOCK_RE there must stay in sync with this text.
       return [{ type: "paragraph", content: [{ type: "text", text: "⟦PROCEDURE_HUB_TOC⟧" }] }];
+    case "EMBED": {
+      // Same sentinel-paragraph approach as TABLE_OF_CONTENTS — no
+      // "iframe" node in this schema, so lib/embedded-blocks.ts's
+      // injectEmbedIframes finds this marker in the rendered HTML and
+      // splices a real <iframe> in its place. EMBED_MARKER_RE there must
+      // stay in sync with this text.
+      const url = String((block.content as any)?.url ?? "").trim();
+      if (!url) return [{ type: "paragraph", content: undefined }];
+      return [{ type: "paragraph", content: [{ type: "text", text: `⟦PROCEDURE_HUB_EMBED:${url}⟧` }] }];
+    }
+    case "DIAGRAM": {
+      // Same idea, but a Mermaid diagram needs a real browser to lay out —
+      // unlike EMBED there's no way to do this server-side at publish time,
+      // so the marker carries the *source*, base64-encoded (safe against
+      // this same text node's own HTML-escaping, and against the source
+      // containing HTML-special characters), for
+      // components/procedures/mermaid-renderer.tsx to render client-side
+      // after lib/embedded-blocks.ts's injectDiagramPlaceholders turns it
+      // into a placeholder element. DIAGRAM_MARKER_RE there must stay in
+      // sync with this text shape.
+      const code = String((block.content as any)?.code ?? "");
+      const base64Source = Buffer.from(code, "utf-8").toString("base64");
+      return [{ type: "paragraph", content: [{ type: "text", text: `⟦PROCEDURE_HUB_DIAGRAM:${base64Source}⟧` }] }];
+    }
     default: {
-      // AUDIO, FILE, EMBED, DIAGRAM, PAGE_LINK, SYNCED_BLOCK_SOURCE,
-      // SYNCED_BLOCK_REFERENCE: no ProseMirror equivalent yet. Emit a
-      // placeholder paragraph so publish never
-      // crashes on a block type the old schema can't represent.
+      // AUDIO, FILE, PAGE_LINK, SYNCED_BLOCK_SOURCE, SYNCED_BLOCK_REFERENCE:
+      // no ProseMirror equivalent yet. Emit a placeholder paragraph so
+      // publish never crashes on a block type the old schema can't represent.
       return [{ type: "paragraph", content: [{ type: "text", text: `[${block.type.toLowerCase()}]` }] }];
     }
   }

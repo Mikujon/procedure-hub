@@ -2,6 +2,8 @@ import { collectText, type PMNode } from "../prosemirror-text";
 
 /** Must match the literal text lib/blocks/serialize.ts's TABLE_OF_CONTENTS case emits — this module walks contentJson directly, so it never goes through lib/toc.ts's HTML-based substitution and has to recognize the same sentinel itself. */
 const TOC_MARKER = "⟦PROCEDURE_HUB_TOC⟧";
+/** Same idea for a DIAGRAM block's sentinel (lib/blocks/serialize.ts) — this module bypasses lib/embedded-blocks.ts entirely (that one works on contentHtml strings, not contentJson), so a Mermaid diagram would otherwise export as this raw marker text. */
+const DIAGRAM_MARKER_RE = /^⟦PROCEDURE_HUB_DIAGRAM:([A-Za-z0-9+/=]*)⟧$/;
 
 /**
  * Structured (non-flattened) walk of a ProcedureVersion.contentJson doc, for
@@ -46,9 +48,19 @@ export function extractExportBlocks(doc: PMNode | null | undefined): ExportBlock
     switch (node.type) {
       case "paragraph": {
         const text = collectText(node);
-        if (text.trim() === TOC_MARKER) {
+        const trimmed = text.trim();
+        if (trimmed === TOC_MARKER) {
           tocMarkerIndices.push(blocks.length);
           blocks.push({ type: "divider" }); // placeholder, replaced below — keeps this index meaningful without a one-off ExportBlock variant
+          break;
+        }
+        const diagramMatch = trimmed.match(DIAGRAM_MARKER_RE);
+        if (diagramMatch) {
+          // No image rendering pipeline for Mermaid here (that needs a real
+          // browser, see lib/embedded-blocks.ts) — export the raw source as
+          // a labeled code block rather than leak the encoded marker.
+          const source = Buffer.from(diagramMatch[1], "base64").toString("utf-8");
+          blocks.push({ type: "code", text: source || "(diagramma vuoto)", language: "mermaid" });
           break;
         }
         if (text.trim()) blocks.push({ type: "paragraph", text });
