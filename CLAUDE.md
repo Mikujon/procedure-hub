@@ -131,6 +131,44 @@ prisma/seed.ts                  dati demo (dipartimenti, utenti, ruoli, una proc
 del codice/UI reali — la cronologia sotto mostra quanto spesso questo file
 si è disallineato in passato.*
 
+**24 ago 2026 (5)**: Traccia 4.4 — segnalibri PDF/Word reali per il
+blocco `TABLE_OF_CONTENTS` esportato: prima era una lista puntata con lo
+stesso testo dei titoli, non collegata a nulla. `lib/export/content-blocks.ts`
+(fonte condivisa dei tre export) ora produce un `tocEntry` con
+`headingIndex` (posizione 0-based del titolo tra tutte le intestazioni
+del documento) invece di un `listItem`; `pdf.ts`/`docx.ts` numerano le
+proprie intestazioni nello stesso ordine, così le due numerazioni
+combaciano sempre. **PDF**: nuovo `lib/export/pdf-bookmarks.ts` costruisce
+a mano l'albero `/Outlines` sul `PDFContext` di basso livello di
+`pdf-lib` (nessuna API alto livello disponibile) con annidamento reale
+(un H2 diventa figlio dell'H1 precedente) e `PageMode=UseOutlines`;
+ogni voce dell'indice diventa anche un'annotazione `/Link` reale. Insidia
+di `pdf-lib`: `context.obj()` converte una stringa nuda in `PDFName`, non
+`PDFString` — un titolo di segnalibro va costruito con
+`PDFHexString.fromText()`. **Word**: usa `Bookmark`/`InternalHyperlink`
+nativi di `docx`. **Bug reale trovato nella libreria `docx` stessa (non
+nel nostro codice)**, verificando l'XML generato: `Bookmark` genera il
+proprio `w:id` chiamando un generatore di id fresco dentro il costruttore
+di *ogni* istanza, quindi tutti i segnalibri del documento finiscono con
+`w:id="1"` — viola lo schema OOXML ma non rompe la navigazione, perché
+Word risolve `InternalHyperlink` per **nome** (`w:anchor`), non per id
+numerico, e i nostri segnalibri non sono mai annidati/sovrapposti.
+Documentato, non "corretto" (interno a `node_modules/docx`). 14 nuovi
+test (`export-content-blocks`/`export-pdf-bookmarks`/`export-docx-bookmarks`,
+questi ultimi due generano file reali e li ri-ispezionano con l'API di
+lettura di `pdf-lib`/`jszip`, non mock). **Verificato anche dal vivo**
+oltre ai test: procedura duplicata con un blocco TOC messo *prima* delle
+sue stesse intestazioni (il caso più difficile), pubblicata, PDF/Word
+scaricati ed ispezionati con strumenti indipendenti da quelli usati per
+generarli — `pypdf` per il PDF (3 segnalibri corretti, 3 link con
+destinazioni Y distinte), ispezione XML grezza per il `.docx`
+(`w:bookmarkStart`/`w:hyperlink` con nomi/anchor corretti). `npx tsc
+--noEmit` pulito, `npm test` 70/70. Dati di test rimossi (due 500 durante
+la pulizia, entrambi lo stesso problema pre-esistente e innocuo di
+MeiliSearch non raggiungibile in questo sandbox dopo il commit della
+transazione DB — confermato via `dev.log` e query dirette a Postgres, non
+una regressione). Dettagli completi in Traccia 4.4 del piano.
+
 **24 ago 2026 (4)**: Traccia 4.3 — gli ultimi tre tipi di blocco
 Notion-standard: `EMBED` (qualunque URL iframe-abile, non solo YouTube),
 `DIAGRAM` (Mermaid — anteprima live nell'editor con import dinamico,

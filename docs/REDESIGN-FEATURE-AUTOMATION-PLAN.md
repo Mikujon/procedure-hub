@@ -647,6 +647,107 @@ come blocco di codice etichettato, non il marcatore grezzo). `npx tsc
 `injectEmbedIframes`/`injectDiagramPlaceholders`). Dati di test rimossi
 a fine verifica.
 
+### 4.4 Segnalibri PDF/Word reali per il blocco TOC — **fatta, 24 ago 2026**
+
+Fino a 4.2, il blocco `TABLE_OF_CONTENTS` nell'export PDF/Word era una
+lista puntata con lo stesso testo dei titoli — un indice "di aspetto",
+non navigabile: non un collegamento reale a nessuna pagina/posizione.
+Questa voce lo rende un vero indice: nel PDF, ogni voce diventa un link
+interno cliccabile verso il titolo corrispondente e ogni titolo compare
+nel pannello segnalibri del lettore PDF (`/Outlines`, il pannello che si
+apre di lato in Acrobat/anteprima del browser); in Word, ogni titolo
+diventa un `Bookmark` nativo e ogni voce dell'indice un
+`InternalHyperlink` verso quel segnalibro (oltre al Navigation Pane di
+Word, che già funzionava prima perché legge direttamente gli stili
+Heading 1/2/3 — questo lavoro riguarda solo le voci *del blocco indice
+stesso*).
+
+`lib/export/content-blocks.ts` — unica fonte di verità condivisa da
+tutti e tre gli export — non produce più `listItem` per il segnaposto
+TOC ma un nuovo `ExportBlock` dedicato, `tocEntry`, con un
+`headingIndex`: la posizione 0-based di quel titolo tra *tutti* i blocchi
+`heading` del documento, nell'ordine in cui compaiono. `pdf.ts` e
+`docx.ts` assegnano un segnalibro/destinazione a ogni intestazione
+proprio in quell'ordine (un contatore locale in ciascuno), quindi le due
+numerazioni combaciano sempre senza che `content-blocks.ts` debba sapere
+nulla degli interni di PDF/Word. `xlsx.ts` (nessuna paginazione, nessun
+segnalibro possibile in un foglio di calcolo) renderizza `tocEntry` come
+prima, semplice testo indentato — fuori scope su richiesta esplicita
+(solo PDF/Word).
+
+**PDF** — `pdf-lib` (v1.17.1) non espone un'API alto livello per
+outline/bookmark: nuovo `lib/export/pdf-bookmarks.ts` costruisce
+l'albero `/Outlines` a mano sul `PDFContext` di basso livello
+(`nextRef`/`assign`/`obj`/`register`), con `Title`/`Parent`/`First`/
+`Last`/`Next`/`Prev`/`Count`/`Dest` per ogni nodo (annidamento reale: un
+H2 diventa figlio del H1 immediatamente precedente, non un fratello) e
+imposta `PageMode = UseOutlines` così il pannello si apre già visibile.
+Ogni voce del blocco TOC diventa in più un'annotazione `/Link` reale
+posizionata sopra il testo della voce (`Rect` calcolato dalla larghezza
+del testo disegnato), con `Dest` verso la stessa destinazione
+dell'intestazione. Un'insidia reale di `pdf-lib`: `context.obj()`
+converte una stringa JS semplice in un `PDFName`, non un `PDFString` —
+va bene per chiavi come `Type`/`Subtype`, ma un titolo di segnalibro con
+testo reale va costruito esplicitamente con `PDFHexString.fromText()`
+per una codifica UTF-16BE corretta (verificato leggendo l'implementazione
+di `obj()` in `node_modules/pdf-lib/cjs/core/PDFContext.js` — un titolo
+costruito con la stringa nuda sarebbe stato scritto come nome PDF, non
+come testo).
+
+**Word** — `docx` (v9.7.1) ha già `Bookmark`/`InternalHyperlink` nativi.
+Ogni intestazione viene avvolta in `new Bookmark({ id: \`heading_${n}\`,
+... })`; ogni `tocEntry` diventa un `InternalHyperlink({ anchor:
+\`heading_${headingIndex}\` })`. **Insidia reale della libreria scoperta
+verificando l'XML generato, non nel nostro codice**: `Bookmark` genera
+il proprio `w:id` numerico interno chiamando
+`bookmarkUniqueNumericIdGen()` dentro il *costruttore di ogni istanza*
+(`node_modules/docx/dist/index.cjs`), quindi ogni segnalibro nel
+documento riceve un contatore fresco che parte sempre da 1 — tutti i
+`w:bookmarkStart`/`w:bookmarkEnd` del documento finiscono con lo stesso
+`w:id="1"`, verificato ispezionando `word/document.xml` reale di un
+export con tre intestazioni. Questo viola lo schema OOXML (che prevede
+`w:id` univoco per documento) ma **non rompe la funzione reale**: Word
+risolve un `InternalHyperlink` per **nome** (`w:anchor`), non per id
+numerico, e i nostri segnalibri non sono mai annidati/sovrapposti (ogni
+coppia start/end racchiude solo il testo di un'intestazione, in
+sequenza) — quindi l'abbinamento start↔end resta comunque univoco per
+ordine, e la navigazione clic-sul-link funziona. Non è un bug nel nostro
+codice quindi non "corretto" (è interno a `node_modules/docx`), ma
+documentato qui perché rilevante se in futuro si annidassero segnalibri.
+
+Nuovi test (14, `npm test` passa da 56 a 70): `tests/export-content-blocks.test.ts`
+(7, `extractExportBlocks` puro — ordine/`headingIndex` delle voci TOC
+indipendentemente da dove il blocco TOC compare nel documento, fallback
+"Nessun titolo nel documento" senza intestazioni, più TOC indipendenti,
+nessun impatto su un documento senza TOC, e i test DIAGRAM pre-esistenti
+lasciati intatti), `tests/export-pdf-bookmarks.test.ts` (4, genera un PDF
+reale con `generateProcedurePdf` e lo ricarica con `PDFDocument.load()`
+di `pdf-lib` per ispezionare l'`/Outlines`/le annotazioni `/Link` vere
+scritte — non un mock), `tests/export-docx-bookmarks.test.ts` (3, genera
+un `.docx` reale, lo decomprime con `jszip` — nuova devDependency
+esplicita, per non affidarsi a una dipendenza transitiva non dichiarata
+di `docx` — e ispeziona `word/document.xml` grezzo). **Verificato anche
+dal vivo oltre ai test**, non solo con fixture sintetiche: duplicata una
+procedura reale, aggiunto un blocco TOC *prima* delle sue intestazioni
+esistenti (il caso più difficile — l'indice referenzia titoli che ancora
+non sono stati renderizzati), pubblicato, scaricati i file reali
+(`GET /api/procedures/[id]/export?format=pdf|docx`) e verificati con
+strumenti indipendenti da quelli usati per generarli: `pypdf` (libreria
+Python, installata per l'occasione) per il PDF — confermati 3 segnalibri
+nel pannello outline con i titoli corretti e 3 annotazioni `/Link` con
+`Dest` a tre posizioni Y distinte (non tutte uguali, cioè puntano
+davvero a intestazioni diverse); `unzip`+ispezione XML grezza per il
+`.docx` — confermati `w:bookmarkStart w:name="heading_0/1/2"` e
+`w:hyperlink w:anchor="heading_0/1/2"` corrispondenti. `npx tsc --noEmit`
+pulito, `npm test` 70/70. Dati di test rimossi a fine verifica (la
+`POST .../blocks/publish` e la `DELETE` sulla procedura di scarto hanno
+entrambe restituito 500 — stesso problema pre-esistente e innocuo di
+MeiliSearch non raggiungibile in questo sandbox dopo il commit della
+transazione DB, non una regressione: confermato sia leggendo lo stack
+trace in `dev.log` sia interrogando Postgres direttamente, che mostrava
+la nuova `ProcedureVersion` creata correttamente nel primo caso e la riga
+`Procedure` effettivamente sparita nel secondo).
+
 ---
 
 ## Regole architetturali da rispettare (invariate, vedi anche `CLAUDE.md`)
