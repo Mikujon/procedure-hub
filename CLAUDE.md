@@ -131,6 +131,30 @@ prisma/seed.ts                  dati demo (dipartimenti, utenti, ruoli, una proc
 del codice/UI reali — la cronologia sotto mostra quanto spesso questo file
 si è disallineato in passato.*
 
+**24 ago 2026 (2)**: Traccia 4 avviata in
+`docs/REDESIGN-FEATURE-AUTOMATION-PLAN.md` — parità UX con Notion sulla
+pagina procedura, identità visiva Control Room invariata (richiesta
+esplicita: pattern di interazione, non un pivot di palette). **4.1
+fatta**: menu opzioni pagina "⋯" (`page-options-menu.tsx` — copia
+link/contenuto, Duplica, Testo piccolo/Larghezza intera come preferenze
+di sola visualizzazione per-utente via `localStorage`, Blocca/Sblocca
+pagina), azioni per blocco nell'editor (hover → "+" inserisci
+sotto, menu "⋮" → Duplica blocco/Trasforma in/Elimina). Nuovo
+`Procedure.isLocked` + `canMutateProcedureContent()` in
+`lib/permissions/index.ts`, applicato a ogni superficie che scrive
+contenuto incluso `collab-server/server.ts` stesso (non solo la route
+che emette il token). Due bug reali trovati verificando dal vivo (non
+solo `tsc --noEmit`): `CALLOUT` mancava da `BLOCK_COMMANDS` fin dalla
+Fase 1 (nessun modo di inserirne uno via `/`); duplicare la procedura
+demo copiava zero blocchi perché il suo `contentJson` seed è `{}` e
+niente applicava il backfill lazy che `GET .../blocks` fa normalmente —
+la route duplicate ora lo applica anch'essa. Verificato con Playwright
+contro Postgres/Redis locali: menu completo, preferenze persistite dopo
+reload, duplicazione con contenuto reale, blocco/sblocco incrociato tra
+un Admin e un EDITOR non-Owner sulla stessa procedura. `npm test`
+42/42 (5 nuovi). **4.2 (TOC/modalità lettura, nuovi tipi di blocco)
+non iniziata** — dettagli e roadmap in Traccia 4 del piano.
+
 **24 ago 2026**: piano `docs/REDESIGN-FEATURE-AUTOMATION-PLAN.md`
 **completato fino a 3.5** (resta aperto solo 3.6, fuori scope per
 scelta) — Traccia 2 (2.1-2.6) e Traccia 3 (3.1-3.4) erano già state

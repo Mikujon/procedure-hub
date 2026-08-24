@@ -377,6 +377,112 @@ notifica risultante nel database.
 
 ---
 
+## Traccia 4 — Parità UX con Notion sulla pagina procedura
+
+*Aggiunta 24 ago 2026, su richiesta esplicita ("come Notion, ma con
+un'identità propria"): non un pivot di palette (Control Room resta —
+vedi `docs/DESIGN.md`, terza direzione visiva, deliberatamente non un
+clone Notion), ma i pattern di interazione — menu opzioni pagina,
+controlli a comparsa sul singolo blocco.*
+
+### 4.1 Menu opzioni pagina ("⋯") + azioni per blocco — **fatta, 24 ago 2026**
+
+Nuovo `components/procedures/page-options-menu.tsx` sulla pagina
+procedura (accanto a Preferiti/Esporta/Modifica): Copia link, Copia
+contenuto pagina (estratto testo reale via `stripHtml`, non
+ricalcolato lato client), Duplica, due preferenze di sola
+visualizzazione per-utente (Testo piccolo/Larghezza intera — persistite
+in `localStorage`, mai sul modello dati: sono un gusto del singolo
+lettore, non una proprietà della procedura — vedi
+`procedure-view-shell.tsx`), Blocca/Sblocca pagina.
+
+**Duplica** (`POST /api/procedures/[id]/duplicate`): copia l'intero
+albero di Block live (non solo l'ultimo `contentHtml` pubblicato — una
+bozza mai pubblicata viene duplicata comunque), più tag e metadati
+(dipartimento/processo/parent/tipo/criticità/visibilità), genera una
+nuova `ProcedureVersion` v1 dalla stessa copia (stesso pattern di
+`promote-to-procedure`) così la copia si legge bene anche prima di un
+primo publish. Storia (versioni, commenti, ack, workflow, allegati)
+deliberatamente NON copiata — una copia parte pulita. Codice reso unico
+con suffisso `-COPY`, `-COPY-2`, ... invece di chiedere all'utente.
+**Bug reale trovato verificando**: la procedura demo `LEG-PRO-001`
+(seed) ha `ProcedureVersion.contentJson = {}` (mai stato un documento
+ProseMirror vero — solo `contentHtml` è popolato nel seed) — duplicarla
+copiava zero blocchi anche col codice corretto, perché
+`prisma.block.findMany` sulla sorgente restituiva un array vuoto e
+niente triggerava il backfill lazy che `GET .../blocks` applica normalmente.
+Il fix: la route duplicate applica lo stesso backfill lazy (da
+`contentJson`) prima di copiare, se la sorgente non ha ancora righe
+`Block` — verificato aggiungendo blocchi reali via API a una copia di
+prova e confermando che la nuova procedura li riceve intatti (query
+diretta sul DB), poi ripulito. Non è stato toccato `prisma/seed.ts` —
+il `contentJson: {}` lì resta un gap di dati demo pre-esistente, non
+nel percorso di questo lavoro.
+
+**Blocca pagina** (`Procedure.isLocked`, nuova migration): azione di
+governance, stesso livello di permesso di "pubblica"
+(`canPublishProcedure`) — non un edit qualunque. Nuovo
+`canMutateProcedureContent()` in `lib/permissions/index.ts` (regola
+architetturale 4: i controlli passano sempre da lì) centralizza la
+regola e sostituisce `canEditProcedure` in ogni punto che scrive
+contenuto: `PATCH /api/procedures/[id]` (percorso legacy), le tre route
+Block (`POST .../blocks`, `PATCH`/`DELETE /api/blocks/[id]` via
+`canEditBlockParent`), il token di collaborazione
+(`GET .../collab-token`) e **anche** `collab-server/server.ts` stesso
+(che riverifica sempre lato server, non si fida del claim nel JWT — non
+sarebbe bastato aggiornare solo la route che emette il token). Un
+locked nega tutti tranne chi potrebbe pubblicare (Owner di
+dipartimento/Admin); non tocca le transizioni di workflow
+(submit/decide/archive restano invariate — bloccare i contenuti non è
+congelare l'approvazione). `POST /api/procedures/[id]/lock` scrive
+`AuditLog` (`UPDATE`, `metadata.field = "isLocked"`). Badge "Bloccata"
+sullo `StatusStamp`, banner esplicativo nella pagina di modifica quando
+l'utente corrente non può bypassare il lock.
+
+**Azioni per blocco** (`block-renderer.tsx`/`block-editor.tsx`): hover
+su un blocco rivela un "+" (inserisce un paragrafo subito sotto,
+riusa `onSelectBlockType` già esistente) e un menu "⋮" — Duplica blocco
+(non copia i figli annidati, raro nella pratica: solo Toggle/liste ne
+hanno), Trasforma in (sottomenu, riusa la stessa lista icone/etichette
+di `BLOCK_COMMANDS` filtrata ai soli tipi "testuali" — cambia il `type`
+del blocco esistente mantenendone il contenuto, via `PATCH
+/api/blocks/[id]`; distinto dal comando slash, che inserisce sempre un
+blocco nuovo), Elimina (spostata dentro il menu, prima era un'icona
+cestino sempre a sé). **Bug reale trovato nello stesso passaggio**:
+`CALLOUT` è un `BlockType` renderizzato da `BlockRenderer` fin dalla
+Fase 1 ma **assente** da `BLOCK_COMMANDS`
+(`slash-command-menu.tsx`) — non esisteva alcun modo di inserirne uno
+via `/`. Aggiunto (icona `Megaphone`); il menu "Trasforma in" eredita
+il fix gratis, riusando la stessa lista.
+
+Verificato dal vivo (browser reale, Playwright headless contro un
+Postgres/Redis locali in questa sessione, non solo `tsc --noEmit`):
+menu opzioni con tutte le voci, copia link/contenuto, toggle
+Testo piccolo/Larghezza intera persistiti dopo reload, duplicazione con
+contenuto reale (vedi bug sopra), blocco/sblocco incrociato tra due
+utenti — Admin blocca, un EDITOR (non Owner) sulla stessa procedura
+vede il badge "Bloccata" e un banner in modifica con campi disabilitati,
+un Owner/Admin può ancora modificare — hover/menu/duplica/trasforma-in
+sul singolo blocco. `npx tsc --noEmit` pulito, `npm test` 42/42 (5
+nuovi su `canMutateProcedureContent`). Dati di test rimossi a fine
+verifica.
+
+### 4.2 Non ancora fatto — prossimo passo naturale
+
+Il terzo pilastro discusso con l'utente ("come si apre/legge una
+procedura, modi di visualizzarla") resta aperto: modalità lettura vs
+modifica più distinte, un pannello indice/TOC che segue lo scroll nella
+pagina procedura (`TABLE_OF_CONTENTS` esiste già come `BlockType` ma
+senza renderer — oggi cade nel placeholder "tipo non supportato" di
+`block-renderer.tsx`), tipi di blocco Notion-standard ancora assenti
+(`EMBED`, `DIAGRAM`, `COLUMN_LIST`/`COLUMN` per layout a colonne). Non
+iniziato in questa sessione per scelta — 4.1 da solo è già una
+superficie ampia (schema, permessi su 5 file, 2 nuove route, UI); meglio
+un pilastro verificato bene che tre superficiali (vedi cronologia in
+cima a questo piano sul rischio opposto).
+
+---
+
 ## Regole architetturali da rispettare (invariate, vedi anche `CLAUDE.md`)
 
 Le più rilevanti per questo piano specifico:
