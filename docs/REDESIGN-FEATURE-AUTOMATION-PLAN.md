@@ -467,19 +467,100 @@ sul singolo blocco. `npx tsc --noEmit` pulito, `npm test` 42/42 (5
 nuovi su `canMutateProcedureContent`). Dati di test rimossi a fine
 verifica.
 
-### 4.2 Non ancora fatto — prossimo passo naturale
+### 4.2 Indice/TOC — pannello di lettura + blocco `TABLE_OF_CONTENTS` — **fatta, 24 ago 2026**
 
 Il terzo pilastro discusso con l'utente ("come si apre/legge una
-procedura, modi di visualizzarla") resta aperto: modalità lettura vs
-modifica più distinte, un pannello indice/TOC che segue lo scroll nella
-pagina procedura (`TABLE_OF_CONTENTS` esiste già come `BlockType` ma
-senza renderer — oggi cade nel placeholder "tipo non supportato" di
-`block-renderer.tsx`), tipi di blocco Notion-standard ancora assenti
-(`EMBED`, `DIAGRAM`, `COLUMN_LIST`/`COLUMN` per layout a colonne). Non
-iniziato in questa sessione per scelta — 4.1 da solo è già una
-superficie ampia (schema, permessi su 5 file, 2 nuove route, UI); meglio
-un pilastro verificato bene che tre superficiali (vedi cronologia in
-cima a questo piano sul rischio opposto).
+procedura, modi di visualizzarla"). Due pezzi, un'unica fonte di verità
+per gli anchor id:
+
+**`lib/toc.ts`** (nuovo, puro, senza dipendenze DOM): un'unica passata su
+`contentHtml` che (1) assegna un id ancora (`heading-<slug>`,
+disambiguato `-2`/`-3`... su testo ripetuto) a ogni `<h1-3>` — sicuro
+perché `contentHtml` è sempre l'output del nostro stesso
+`generateHTML()` (Fase 1 o editor legacy, entrambi StarterKit), mai HTML
+arbitrario di terzi — e (2) sostituisce il segnaposto di un eventuale
+blocco `TABLE_OF_CONTENTS` con un `<nav class="toc-block">` reale di
+link a quegli stessi id. 7 test puri in `tests/toc.test.ts` (id in
+ordine, disambiguazione, heading vuoto ignorato, entità/marcatori
+interni ripuliti dall'etichetta ma non dall'HTML renderizzato,
+sostituzione del segnaposto, stato vuoto senza titoli, contenuto senza
+TOC/heading invariato).
+
+**Pannello di lettura** (`components/procedures/reading-outline.tsx`):
+card "Indice" nella colonna laterale della pagina procedura — sticky,
+scrollspy reale via `IntersectionObserver` (non solo scroll listener),
+click con smooth-scroll. Non renderizzata sotto 2 titoli (una procedura
+con zero o un solo titolo non ha nulla da navigare, e la colonna
+laterale è già affollata). `procedures/[id]/page.tsx` ora calcola
+`renderContentWithToc()` una sola volta e ne riusa l'output sia per il
+contenuto renderizzato sia per "Copia contenuto pagina" (il menu
+opzioni, 4.1) — il segnaposto del blocco TOC non finisce mai più negli
+appunti copiati.
+
+**Blocco `TABLE_OF_CONTENTS`** (era già un `BlockType` dalla Fase 1, mai
+renderizzato — cadeva nel placeholder "tipo non supportato" di
+`block-renderer.tsx`, e mancava perfino dal menu slash): ora inseribile
+via `/indice`, mostra dal vivo nell'editor l'elenco dei titoli
+*top-level* del documento (computato in `block-editor.tsx` da
+`tree`, non uno stato proprio del blocco — zero testo memorizzato,
+sempre aggiornato), click scorre al blocco tramite un nuovo
+`data-block-id` sul wrapper di ogni riga. Alla pubblicazione,
+`lib/blocks/serialize.ts` emette un paragrafo-segnaposto con un
+marcatore sentinella (`⟦PROCEDURE_HUB_TOC⟧`) che `lib/toc.ts` sostituisce
+con i link veri — stessi id del pannello di lettura sopra.
+`lib/export/content-blocks.ts` (PDF/Word/Excel, che legge `contentJson`
+direttamente, non passa da `lib/toc.ts`) riconosce lo stesso marcatore e
+lo espande in un elenco puntato semplice dei titoli — non un vero
+bookmark (pdf.ts/docx.ts non hanno quel concetto oggi), ma niente più
+testo sentinella grezzo nel documento esportato.
+
+**Due bug reali trovati verificando dal vivo** (non solo `tsc`), uno dei
+due serio e pre-esistente, scoperto solo perché questo era il primo
+lavoro della sessione ad aprire l'editor a blocchi su una procedura con
+contenuto realmente non vuoto:
+- **`prisma/seed.ts`** salvava `contentJson: {}` per la procedura demo
+  (solo `contentHtml` era popolato) — qualunque backfill lazy dei Block
+  (quello già esistente in `GET .../blocks`, e quello nuovo di 4.1 in
+  `POST .../duplicate`) produceva zero blocchi nonostante la pagina di
+  lettura mostrasse il contenuto perfettamente. Corretto scrivendo un
+  vero documento ProseMirror in `contentJson`, identico a `contentHtml`.
+- **`hooks/use-collaborative-editor.ts`** esponeva `doc`/`provider` nel
+  momento stesso in cui venivano *costruiti* (`new Y.Doc()` +
+  `new HocuspocusProvider(...)`), non quando la connessione andava
+  davvero a buon fine. Risultato: con un token emesso ma `collab-server`
+  irraggiungibile (`COLLAB_JWT_SECRET` impostato, il processo
+  collab-server no — esattamente lo stato di questo ambiente di
+  verifica, e di qualunque deploy reale in cui collab-server sia giù),
+  `BlockEditor` credeva la sessione collaborativa attiva e passava un
+  `Y.XmlFragment` vuoto mai sincronizzato a ogni blocco — che quindi
+  ignora `initialContent` per design (vedi `InlineRichText`). Ogni
+  procedura aperta nell'editor a blocchi con `collab-server` non
+  raggiungibile mostrava **tutti** i blocchi vuoti, testo reale in
+  Postgres o meno — non un problema isolato al blocco TOC. Fix: `doc`/
+  `provider` vengono esposti solo dentro `onStatus` quando lo stato è
+  davvero `Connected`; il messaggio "Connessione alla sessione
+  collaborativa…" ora sparisce anche quando la connessione fallisce
+  (prima restava per sempre). Nessun test automatico coperto (hook React
+  con dipendenza WebSocket, l'infrastruttura Vitest di questo repo è
+  `environment: "node"`, senza jsdom) — verificato dal vivo nel browser,
+  stesso standard del resto di questa sessione.
+
+Verificato dal vivo (Playwright contro Postgres/Redis locali): pannello
+Indice con 3 titoli reali della procedura seed, scrollspy con
+evidenziazione corretta dopo click, blocco TOC inserito via `/indice` su
+una procedura duplicata con contenuto reale (non vuoto, grazie al fix
+del seed) che mostra dal vivo gli stessi 3 titoli, pubblicato e
+verificato che la pagina risultante mostri link reali (`<nav
+class="toc-block">`) e non il testo sentinella. `npx tsc --noEmit`
+pulito, `npm test` 49/49 (7 nuovi). Dati di test (procedure duplicate di
+prova) rimossi a fine verifica — la procedura seed reale non è mai stata
+toccata, solo corretta nel file sorgente e ri-seedata.
+
+Non fatto in questa sessione, per scelta (stessa logica di 4.1: un
+pilastro verificato bene batte lavoro sparso): altri tipi di blocco
+Notion-standard ancora assenti (`EMBED`, `DIAGRAM`, `COLUMN_LIST`/
+`COLUMN` per layout a colonne), e un vero bookmark PDF/Word per il
+blocco TOC esportato (oggi è un elenco puntato semplice, vedi sopra).
 
 ---
 

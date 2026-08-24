@@ -152,8 +152,33 @@ la route duplicate ora lo applica anch'essa. Verificato con Playwright
 contro Postgres/Redis locali: menu completo, preferenze persistite dopo
 reload, duplicazione con contenuto reale, blocco/sblocco incrociato tra
 un Admin e un EDITOR non-Owner sulla stessa procedura. `npm test`
-42/42 (5 nuovi). **4.2 (TOC/modalità lettura, nuovi tipi di blocco)
-non iniziata** — dettagli e roadmap in Traccia 4 del piano.
+42/42 (5 nuovi). **4.2 (TOC/modalità lettura) fatta subito dopo, vedi
+voce successiva.**
+
+**24 ago 2026 (3)**: Traccia 4.2 — pannello "Indice" (outline che segue
+lo scroll, `reading-outline.tsx`, scrollspy reale via
+`IntersectionObserver`) sulla pagina procedura, più il blocco
+`TABLE_OF_CONTENTS` reso finalmente funzionante (era un `BlockType` dalla
+Fase 1, mai renderizzato, mancava perfino dal menu `/`). Nuovo
+`lib/toc.ts`: un'unica passata su `contentHtml` assegna id-ancora a ogni
+titolo e sostituisce il blocco TOC con link reali agli stessi id — usato
+sia dal pannello di lettura sia da "Copia contenuto pagina" (4.1). 7 test
+puri in `tests/toc.test.ts`. **Due bug reali trovati verificando dal
+vivo**, uno serio e pre-esistente: `prisma/seed.ts` salvava
+`contentJson: {}` per la procedura demo (corretto, ora un vero documento
+ProseMirror); e `hooks/use-collaborative-editor.ts` esponeva `doc`/
+`provider` non appena *costruiti*, non quando la connessione andava
+davvero a buon fine — con `collab-server` irraggiungibile (come in
+questo ambiente di verifica) l'editor a blocchi credeva la sessione
+collaborativa attiva e mostrava **ogni** blocco vuoto, testo reale in
+Postgres o meno, non solo il blocco TOC. Corretto: `doc`/`provider`
+esposti solo dentro `onStatus` a connessione confermata. Verificato dal
+vivo (Playwright): pannello con 3 titoli reali, scrollspy corretto,
+blocco TOC inserito via `/indice` su un duplicato con contenuto vero,
+pubblicato e confermato che la pagina mostri link reali (non il testo
+segnaposto). `npx tsc --noEmit` pulito, `npm test` 49/49. Dettagli
+completi in Traccia 4 del piano — non fatti per scelta: `EMBED`/
+`DIAGRAM`/colonne, bookmark PDF/Word reali per il blocco TOC esportato.
 
 **24 ago 2026**: piano `docs/REDESIGN-FEATURE-AUTOMATION-PLAN.md`
 **completato fino a 3.5** (resta aperto solo 3.6, fuori scope per
