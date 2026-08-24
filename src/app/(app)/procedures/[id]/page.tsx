@@ -14,11 +14,14 @@ import { VersionHistory } from "@/components/procedures/version-history";
 import { ExportMenu } from "@/components/procedures/export-menu";
 import { CommentThread } from "@/components/procedures/comment-thread";
 import { ProcedureBreadcrumb } from "@/components/procedures/procedure-breadcrumb";
+import { ProcedureViewShell } from "@/components/procedures/procedure-view-shell";
+import { PageOptionsMenu } from "@/components/procedures/page-options-menu";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
-import { Pencil, History, MessageSquare } from "lucide-react";
+import { stripHtml } from "@/lib/search";
+import { Pencil, History, MessageSquare, Lock } from "lucide-react";
 
 export default async function ProcedurePage({ params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -83,9 +86,10 @@ export default async function ProcedurePage({ params }: { params: { id: string }
     globalRole === "ADMIN" || globalRole === "COMPLIANCE_OFFICER" || procedure.ownerId === userId;
 
   const commentCount = procedure.comments.reduce((n, c) => n + 1 + c.replies.length, 0);
+  const contentText = stripHtml(procedure.currentVersion?.contentHtml ?? "");
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <ProcedureViewShell>
       <ProcedureBreadcrumb
         departmentId={procedure.department.id}
         departmentSlug={procedure.department.slug}
@@ -105,6 +109,11 @@ export default async function ProcedurePage({ params }: { params: { id: string }
           {procedure.summary && <p className="mt-2 text-muted-foreground">{procedure.summary}</p>}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <StatusStamp status={procedure.status} />
+            {procedure.isLocked && (
+              <Badge variant="secondary" className="gap-1">
+                <Lock className="h-3 w-3" /> Bloccata
+              </Badge>
+            )}
             {procedure.isCritical && <Badge variant="destructive">Critical Process</Badge>}
             {procedure.tags.map((t) => (
               <Badge key={t.tagId} variant="secondary">
@@ -130,6 +139,13 @@ export default async function ProcedurePage({ params }: { params: { id: string }
               </Link>
             </Button>
           )}
+          <PageOptionsMenu
+            procedureId={procedure.id}
+            contentText={contentText}
+            canDuplicate={canEdit}
+            canLock={canPublish}
+            initialLocked={procedure.isLocked}
+          />
         </div>
       </div>
 
@@ -252,6 +268,6 @@ export default async function ProcedurePage({ params }: { params: { id: string }
           </Card>
         </aside>
       </div>
-    </div>
+    </ProcedureViewShell>
   );
 }

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { BlockEditor } from "@/components/blocks/block-editor";
 import type { ClientBlock } from "@/components/blocks/types";
-import { Save } from "lucide-react";
+import { Save, Lock } from "lucide-react";
 import { colorForUser } from "@/lib/collab-colors";
 
 export default function EditProcedurePage({ params }: { params: { id: string } }) {
@@ -15,6 +15,7 @@ export default function EditProcedurePage({ params }: { params: { id: string } }
   const [summary, setSummary] = useState("");
   const [blocks, setBlocks] = useState<ClientBlock[] | null>(null);
   const [canEdit, setCanEdit] = useState(false);
+  const [isLocked, setIsLocked] = useState(false);
   const [collabToken, setCollabToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
@@ -30,6 +31,7 @@ export default function EditProcedurePage({ params }: { params: { id: string } }
       if (!active) return;
       setTitle(procData.procedure.title);
       setSummary(procData.procedure.summary ?? "");
+      setIsLocked(Boolean(procData.procedure.isLocked));
       setBlocks(blocksData.blocks ?? []);
 
       try {
@@ -83,6 +85,13 @@ export default function EditProcedurePage({ params }: { params: { id: string } }
           <Save className="h-4 w-4" /> {publishing ? "Pubblicazione…" : "Pubblica versione"}
         </button>
       </div>
+
+      {isLocked && !canEdit && (
+        <div className="flex items-center gap-2 rounded-sm border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground opacity-0 animate-rise">
+          <Lock className="h-4 w-4 shrink-0" /> Questa pagina è bloccata — solo un Owner di dipartimento o un Admin può
+          sbloccarla (menu opzioni pagina) prima che tu possa modificarla.
+        </div>
+      )}
 
       <input
         value={title}
