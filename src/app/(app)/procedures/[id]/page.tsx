@@ -12,11 +12,13 @@ import { FavoriteButton } from "@/components/procedures/favorite-button";
 import { AttachmentsPanel } from "@/components/procedures/attachments-panel";
 import { VersionHistory } from "@/components/procedures/version-history";
 import { ExportMenu } from "@/components/procedures/export-menu";
+import { CommentThread } from "@/components/procedures/comment-thread";
+import { ProcedureBreadcrumb } from "@/components/procedures/procedure-breadcrumb";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
-import { Pencil, History } from "lucide-react";
+import { Pencil, History, MessageSquare } from "lucide-react";
 
 export default async function ProcedurePage({ params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -29,6 +31,7 @@ export default async function ProcedurePage({ params }: { params: { id: string }
     include: {
       department: true,
       process: true,
+      parent: { select: { id: true, code: true, processId: true, parentId: true } },
       currentVersion: true,
       versions: { orderBy: { versionNumber: "desc" }, include: { author: { select: { name: true } } } },
       tags: { include: { tag: true } },
@@ -39,6 +42,17 @@ export default async function ProcedurePage({ params }: { params: { id: string }
       owner: { select: { name: true } },
       acknowledgments: { where: { userId } },
       favorites: { where: { userId }, select: { id: true } },
+      comments: {
+        where: { parentId: null },
+        orderBy: { createdAt: "desc" },
+        include: {
+          author: { select: { id: true, name: true, avatarUrl: true } },
+          replies: {
+            orderBy: { createdAt: "asc" },
+            include: { author: { select: { id: true, name: true, avatarUrl: true } } },
+          },
+        },
+      },
     },
   });
 
@@ -68,21 +82,22 @@ export default async function ProcedurePage({ params }: { params: { id: string }
   const canSeeAckDashboard =
     globalRole === "ADMIN" || globalRole === "COMPLIANCE_OFFICER" || procedure.ownerId === userId;
 
+  const commentCount = procedure.comments.reduce((n, c) => n + 1 + c.replies.length, 0);
+
   return (
     <div className="mx-auto max-w-5xl">
-      <div className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Link href={`/departments/${procedure.department.slug}`} className="hover:text-foreground hover:underline">
-          {procedure.department.name}
-        </Link>
-        {procedure.process && (
-          <>
-            <span>/</span>
-            <span>{procedure.process.name}</span>
-          </>
-        )}
-        <span>/</span>
-        <span className="font-mono">{procedure.code}</span>
-      </div>
+      <ProcedureBreadcrumb
+        departmentId={procedure.department.id}
+        departmentSlug={procedure.department.slug}
+        departmentName={procedure.department.name}
+        processId={procedure.process?.id ?? null}
+        processName={procedure.process?.name ?? null}
+        parentProcedure={procedure.parent}
+        procedureId={procedure.id}
+        procedureCode={procedure.code}
+        procedureProcessId={procedure.processId}
+        procedureParentId={procedure.parentId}
+      />
 
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
@@ -96,6 +111,13 @@ export default async function ProcedurePage({ params }: { params: { id: string }
                 {t.tag.name}
               </Badge>
             ))}
+            {commentCount > 0 && (
+              <a href="#commenti" className="inline-flex">
+                <Badge variant="secondary" className="gap-1">
+                  <MessageSquare className="h-3 w-3" /> {commentCount}
+                </Badge>
+              </a>
+            )}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -144,6 +166,26 @@ export default async function ProcedurePage({ params }: { params: { id: string }
               </CardContent>
             </Card>
           )}
+
+          <div id="commenti">
+            <CommentThread
+              procedureId={procedure.id}
+              currentUserId={userId}
+              isAdmin={globalRole === "ADMIN"}
+              comments={procedure.comments.map((c) => ({
+                id: c.id,
+                body: c.body,
+                createdAt: c.createdAt.toISOString(),
+                author: c.author,
+                replies: c.replies.map((r) => ({
+                  id: r.id,
+                  body: r.body,
+                  createdAt: r.createdAt.toISOString(),
+                  author: r.author,
+                })),
+              }))}
+            />
+          </div>
         </div>
 
         <aside className="space-y-4">

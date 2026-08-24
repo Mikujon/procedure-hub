@@ -14,6 +14,8 @@ interface NotifyEventInput {
   ackVersionNumber?: number;
   /** False = in-app Notification row only, skip the Slack/Google Chat fan-out (Fase 4's DAY_3 reminder stage). Default true. */
   externalChannels?: boolean;
+  /** Appended to the computed /procedures/[id] link, e.g. "#commenti" so a @mention notification (2.6) lands the reader on the thread instead of the top of the page. */
+  linkSuffix?: string;
 }
 
 /**
@@ -31,7 +33,7 @@ export async function notifyEvent(input: NotifyEventInput) {
     ? await prisma.user.findMany({ where: { id: { in: input.userIds } } })
     : await resolveDefaultRecipients(input.tenantId, input.procedureId);
 
-  const linkUrl = input.procedureId ? `/procedures/${input.procedureId}` : undefined;
+  const linkUrl = input.procedureId ? `/procedures/${input.procedureId}${input.linkSuffix ?? ""}` : undefined;
 
   await prisma.notification.createMany({
     data: recipients.map((r) => ({
