@@ -28,19 +28,35 @@ export function useCollaborativeEditor({ procedureId, token }: UseCollaborativeE
     if (!token) return;
 
     const newDoc = new Y.Doc();
+    let everConnected = false;
     const newProvider = new HocuspocusProvider({
       url: process.env.NEXT_PUBLIC_COLLAB_URL ?? "ws://localhost:1234",
       name: procedureId,
       document: newDoc,
       token,
       onStatus: ({ status: s }) => {
-        setStatus(s === WebSocketStatus.Connected ? "connected" : "connecting");
+        const isConnected = s === WebSocketStatus.Connected;
+        setStatus(isConnected ? "connected" : "connecting");
+        // doc/provider are only exposed once a connection has actually been
+        // proven — exposing them the instant they're merely *constructed*
+        // (the previous behavior) made BlockEditor's collabActive true even
+        // when collab-server is completely unreachable, which silently
+        // discarded every block's real Postgres-backed initialContent in
+        // favor of an empty local Y.Doc that never got a chance to sync
+        // (InlineRichText ignores initialContent whenever fragment is set).
+        // Found verifying the reading-outline/TOC feature against a freshly
+        // duplicated procedure: every block rendered blank despite having
+        // real stored content, because a token was issued (COLLAB_JWT_SECRET
+        // set) but collab-server itself wasn't running.
+        if (isConnected && !everConnected) {
+          everConnected = true;
+          setDoc(newDoc);
+          setProvider(newProvider);
+        }
       },
       onDisconnect: () => setStatus("disconnected"),
     });
 
-    setDoc(newDoc);
-    setProvider(newProvider);
     setStatus("connecting");
 
     return () => {
