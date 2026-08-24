@@ -127,9 +127,30 @@ prisma/seed.ts                  dati demo (dipartimenti, utenti, ruoli, una proc
 
 ## Cosa è già completo
 
-*Aggiornato 21 ago 2026. Voce dopo voce, non fidarti di questa lista più
+*Aggiornato 24 ago 2026. Voce dopo voce, non fidarti di questa lista più
 del codice/UI reali — la cronologia sotto mostra quanto spesso questo file
 si è disallineato in passato.*
+
+**24 ago 2026**: piano `docs/REDESIGN-FEATURE-AUTOMATION-PLAN.md`
+**completato fino a 3.5** (resta aperto solo 3.6, fuori scope per
+scelta) — Traccia 2 (2.1-2.6) e Traccia 3 (3.1-3.4) erano già state
+implementate ma mai committate (rimaste solo nel working tree tra
+sessioni); prima azione di questa sessione è stata verificarle
+(`npx tsc --noEmit` pulito, `npm test` 35/35) e committarle in 6 commit
+separati per area. Poi **3.5**: `runStatusAutomations`/
+`runAckCompletionAutomations`/`runCommentAddedAutomations`
+(`src/lib/automations/engine.ts`) prendevano `crypto.randomUUID()` come
+`fireKey` a ogni chiamata — nessun deduplicamento reale sul vincolo
+`@@unique([ruleId, entityId, fireKey])`, a differenza dei trigger a
+tempo. Ora richiedono un `fireKey` passato dal chiamante, riusando un id
+già stabile a disposizione di ognuno: l'id del `WorkflowStep` per
+submit/decide, l'id dell'`AuditLog` per archive, l'id dell'`AckCampaign`
+per il completamento ACK, l'id del `Comment` per il trigger commenti.
+Verificato con `npm test` (37 test, prima 35) — riscritti i test che
+documentavano esplicitamente il gap in test che provano il
+comportamento opposto ora vero (stesso `fireKey` → una riga, `fireKey`
+diverso → due righe, entrambe scattano). Dettagli completi in
+`docs/REDESIGN-FEATURE-AUTOMATION-PLAN.md` (3.5).
 
 **21 ago 2026**: alberatura Dipartimento → Processo → Procedura → Istruzione
 di Lavoro **navigabile** (`src/components/layout/department-tree.tsx`) —
@@ -257,16 +278,17 @@ utenti, non per difficoltà tecnica.
    li prevede già nello schema; ogni adapter segue lo stesso pattern di
    `lib/integrations/slack.ts`.
 6. **Test automatici** — **avviata, 21 ago 2026**: prima infrastruttura
-   Vitest (`vitest.config.mts`, `npm test`), 35 test in `tests/`, i quattro
+   Vitest (`vitest.config.mts`, `npm test`), 37 test in `tests/`, i quattro
    flussi indicati come priorità sono coperti — `tests/permissions.test.ts`
    (RBAC: visibilità, edit/publish, isolamento multi-tenant su un
    `departmentId` incrociato), `tests/workflow.test.ts` (pipeline di
    approvazione incluso lo skip di `COMPLIANCE_APPROVAL` per contenuto non
    critico/non taggato e la sua eccezione, rejection, `archiveProcedure`,
    immutabilità di `ProcedureVersion`), `tests/automations.test.ts`
-   (`matchesConditions`, dedup reale sui trigger a tempo via
-   `@@unique([ruleId, entityId, fireKey])`, e il gap di dedup *documentato
-   ma non prima testato* sui trigger event-driven). Sono test di
+   (`matchesConditions`, dedup reale su *tutti* i trigger — a tempo via
+   `@@unique([ruleId, entityId, fireKey])` fin dall'inizio, event-driven da
+   quando 3.5 ha tolto il `fireKey` casuale, 24 ago 2026, vedi sopra). Sono
+   test di
    integrazione reali contro il Postgres di dev (non mock) — ogni file crea
    un Tenant isolato (`tests/helpers/test-tenant.ts`) e lo cancella in
    `afterAll`; solo Slack/Google Chat (BullMQ) e l'indicizzazione

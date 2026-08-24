@@ -94,9 +94,11 @@ assumere che manchi qualcosa.
   verificata dal vivo nel browser (screenshot), non solo `tsc --noEmit`.
   `docs/DESIGN.md` aggiornato con la lista onesta finale.
 
-### Cosa NON è ancora fatto — tutto il resto di questo documento (Traccia 3, da 3.1)
+### Cosa NON è ancora fatto — solo 3.6 (fuori scope per scelta)
 
-Traccia 1 e Traccia 2 sono **entrambe complete** (20-21 ago 2026).
+Traccia 1, Traccia 2 e Traccia 3 (3.1-3.5) sono **tutte complete**
+(20-24 ago 2026). Resta aperto solo 3.6, deliberatamente fuori scope
+(vedi sotto).
 
 ---
 
@@ -329,16 +331,40 @@ DSAR dall'interfaccia commenti (2.1) → `AutomationRun` con
 (l'owner, non l'autore del commento) con titolo e `linkUrl` corretti.
 Dati di test rimossi.
 
-### 3.5 Irrobustire il dedup sugli eventi
+### 3.5 Irrobustire il dedup sugli eventi — **fatta, 24 ago 2026**
 
-`PROCEDURE_STATUS_ENTERED` e `ACK_CAMPAIGN_COMPLETED`
-(`src/lib/automations/engine.ts`) generano una chiave casuale
-(`crypto.randomUUID()`) a ogni chiamata — solo storico, **nessun
-deduplicamento reale**, a differenza dei trigger a tempo (protetti dal
-vincolo `@@unique([ruleId, entityId, fireKey])` con una `fireKey`
-stabile). Rischio concreto solo in caso di richiesta doppia/retry lato
-client. Irrobustire con una chiave stabile se si osserva il problema in
-pratica, non preventivamente come primo passo.
+`runStatusAutomations`, `runAckCompletionAutomations` e
+`runCommentAddedAutomations` (`src/lib/automations/engine.ts`) prendevano
+`crypto.randomUUID()` come `fireKey` a ogni chiamata — solo storico,
+**nessun deduplicamento reale**, a differenza dei trigger a tempo
+(protetti dal vincolo `@@unique([ruleId, entityId, fireKey])` con una
+`fireKey` stabile: `nextReviewDate.toISOString()`, `String(days)`). Il
+`fireKey` casuale è stato tolto dall'engine: le tre funzioni ora
+**richiedono** un `fireKey` passato dal chiamante, stabile per la stessa
+transizione reale, distinto per una transizione successiva genuina nello
+stesso stato. Ogni chiamante aveva già a disposizione un id stabile
+naturale senza bisogno di inventarne uno:
+- `submitForReview`/`decideWorkflowStep` (`src/lib/workflow/index.ts`):
+  l'id della riga `WorkflowStep` creata/decisa — uno `step` riceve una
+  sola decisione nel flusso reale, quindi il suo id è già
+  stabile-e-unico. `submitForReview` ora cattura il risultato di
+  `$transaction([...])` invece di scartarlo.
+- `archiveProcedure`: l'id della riga `AuditLog` appena scritta (nessun
+  `WorkflowStep` su questo percorso da riusare).
+- `maybeCompleteCampaign` (`src/lib/ack.ts`): l'id della `AckCampaign` —
+  `completedAt` si imposta una sola volta per campagna, quindi una race
+  tra due ACK concorrenti che superano entrambi la soglia del 100% ora
+  deduplica correttamente invece di far scattare la regola due volte.
+- `POST /api/procedures/[id]/comments`: l'id del `Comment` appena creato.
+
+Nessuna migration necessaria — `fireKey` era già una colonna stringa
+libera, cambia solo cosa il chiamante ci mette dentro. Verificato con
+`npm test` (37 test, prima 35): riscritto il test che documentava
+esplicitamente il gap ("firing twice creates two rows, not deduped") in
+due test che provano il comportamento opposto ora vero — stesso
+`fireKey` due volte → una sola riga `AutomationRun`; `fireKey` diverso
+(transizione realmente separata) → due righe, entrambe scattano. Stesso
+per `runCommentAddedAutomations`. `npx tsc --noEmit` pulito.
 
 ### 3.6 Esplicitamente fuori scope per ora
 
