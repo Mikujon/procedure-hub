@@ -95,6 +95,26 @@ export async function canPublishProcedure(user: ActingUser, departmentId: string
   return role === "DEPARTMENT_OWNER";
 }
 
+/**
+ * Whether `user` may push a content change (a block edit, or a new version
+ * via the legacy PATCH /api/procedures/[id] path) to a Procedure that might
+ * be locked via "Blocca pagina" (page-options menu, POST /[id]/lock). Same
+ * department-edit rule as canEditProcedure, tightened once isLocked is set:
+ * only whoever could publish (Department Owner/Admin) stays able to edit —
+ * everyone else is frozen out until it's unlocked again. Workflow
+ * transitions (submit/decide/archive, lib/workflow) are a separate surface
+ * and intentionally NOT gated by this — locking content isn't the same as
+ * freezing its approval state.
+ */
+export async function canMutateProcedureContent(
+  user: ActingUser,
+  procedure: { departmentId: string; isLocked: boolean }
+): Promise<boolean> {
+  if (!(await canEditProcedure(user, procedure.departmentId))) return false;
+  if (!procedure.isLocked) return true;
+  return canPublishProcedure(user, procedure.departmentId);
+}
+
 /** Compliance approval stage can be actioned by any Compliance Officer, tenant-wide. */
 export function canActOnComplianceStage(user: ActingUser): boolean {
   return user.globalRole === "ADMIN" || user.globalRole === "COMPLIANCE_OFFICER";
@@ -142,16 +162,16 @@ export async function canEditBlockParent(
   block: {
     procedureId: string | null;
     pageId: string | null;
-    procedure: { departmentId: string } | null;
-    page?: { procedure: { departmentId: string } | null } | null;
+    procedure: { departmentId: string; isLocked: boolean } | null;
+    page?: { procedure: { departmentId: string; isLocked: boolean } | null } | null;
   }
 ): Promise<boolean> {
   if (block.procedureId && block.procedure) {
-    return canEditProcedure(user, block.procedure.departmentId);
+    return canMutateProcedureContent(user, block.procedure);
   }
   if (block.pageId) {
     if (block.page?.procedure) {
-      return canEditProcedure(user, block.page.procedure.departmentId);
+      return canMutateProcedureContent(user, block.page.procedure);
     }
     return canEditWorkspace(user);
   }
