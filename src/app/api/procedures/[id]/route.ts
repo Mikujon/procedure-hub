@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { z } from "zod";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { canEditProcedure, canViewProcedure } from "@/lib/permissions";
+import { canMutateProcedureContent, canViewProcedure } from "@/lib/permissions";
 import { notifyEvent } from "@/lib/integrations/notify";
 import { indexProcedure, removeFromIndex, buildSearchDocument, stripHtml } from "@/lib/search";
 
@@ -68,8 +68,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const allowed = await canEditProcedure({ id: userId, tenantId, globalRole }, existing.departmentId);
-  if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const allowed = await canMutateProcedureContent({ id: userId, tenantId, globalRole }, existing);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: existing.isLocked ? "Questa pagina è bloccata" : "Forbidden" },
+      { status: existing.isLocked ? 423 : 403 }
+    );
+  }
 
   const parsed = updateSchema.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
