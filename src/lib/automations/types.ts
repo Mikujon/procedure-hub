@@ -89,8 +89,22 @@ export type ChangeProcedureStatusConfig = z.infer<typeof changeProcedureStatusCo
 /// can set it (see the isTenantAdmin gate in api/admin/automations), so an
 /// admin-supplied POST target isn't a new SSRF surface, it's the same one
 /// those integrations already accept.
+///
+/// `authHeader` (added when this stopped being enough for Jira/ServiceNow/
+/// Freshdesk, see actions.ts): the *whole* Authorization header value,
+/// verbatim — "Bearer <token>" for a ServiceNow OAuth token, "Basic
+/// <base64(email:api_token)>" for Jira Cloud/Freshdesk's basic-auth REST
+/// APIs. A single opaque string rather than a scheme picker: those three
+/// providers alone already cover 3 different auth shapes, so a
+/// "helpfully" structured field would just be guessing at a 4th provider's
+/// shape next. The admin is expected to construct the header value the
+/// same way they would for a `curl -H "Authorization: ..."` call against
+/// that provider's own docs. Optional: Teams/Slack-style incoming webhooks
+/// (and Jira's own "Automation for Jira" incoming-webhook trigger) already
+/// carry their secret in the URL itself and need nothing here.
 export const sendWebhookConfigSchema = z.object({
   url: z.string().url(),
+  authHeader: z.string().min(1).max(4000).optional(),
 });
 export type SendWebhookConfig = z.infer<typeof sendWebhookConfigSchema>;
 

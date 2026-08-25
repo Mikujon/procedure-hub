@@ -66,6 +66,12 @@ export async function executeChangeProcedureStatus(
  * instead of being swallowed — the webhook call *is* the action, so its
  * failure must land in AutomationRun.status/error (surfaced in the 3.1 run
  * history), not disappear into a console.error no one is watching.
+ *
+ * `config.authHeader`, when set, is sent verbatim as the Authorization
+ * header — needed to call Jira/ServiceNow/Freshdesk's own REST APIs
+ * directly (all three expect Basic or Bearer auth on every request, unlike
+ * Teams/Slack/Jira-Automation incoming webhooks, which carry their secret
+ * in the URL and need nothing here).
  */
 export async function executeSendWebhook(_tenantId: string, procedureId: string, config: SendWebhookConfig) {
   const procedure = await prisma.procedure.findUniqueOrThrow({
@@ -77,7 +83,10 @@ export async function executeSendWebhook(_tenantId: string, procedureId: string,
 
   const res = await fetch(config.url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(config.authHeader ? { Authorization: config.authHeader } : {}),
+    },
     body: JSON.stringify({
       event: "procedure.automation",
       procedure: {
