@@ -131,6 +131,38 @@ prisma/seed.ts                  dati demo (dipartimenti, utenti, ruoli, una proc
 del codice/UI reali — la cronologia sotto mostra quanto spesso questo file
 si è disallineato in passato.*
 
+**25 ago 2026 (4)**: Roadmap #6, continuazione — copertura test per
+l'upload allegati. Estratta in `src/lib/attachments.ts` la logica pura
+già presente ma inline in `api/attachments/route.ts` (whitelist
+estensioni, mappatura content-type, costruzione della storage key) —
+nessun bug di permessi trovato qui (POST/DELETE/download erano già
+correttamente filtrati da `canEditProcedure`/`canViewProcedure`, rule 4
+rispettata), ma zero copertura test su una logica comunque rilevante per
+la sicurezza: `isAllowedAttachmentType` è una whitelist, non una
+blacklist, e la storage key non deriva mai dal nome file originale
+(oltre alla sua estensione, già validata) proprio per restare immune a
+un path traversal tipo `evil.pdf/../../etc/passwd` — 12 nuovi test
+provano anche questo caso esplicitamente, non solo i casi comuni. **Nota
+sull'ambiente, non un bug**: `POST /api/attachments` controlla
+`storage.isStorageConfigured()` come prima cosa, prima di qualunque
+validazione — in questo sandbox niente Object Storage S3-compatible è
+raggiungibile (nessun demone Docker per MinIO, nessun accesso di rete per
+scaricarne il binario), quindi quella route restituisce sempre 503 e la
+sua logica di validazione (oltre a quella già estratta e testata) non è
+verificabile dal vivo qui, a differenza di `DELETE`/`download` che sono
+gate-ate dal permesso *prima* di toccare lo storage. **Verificato dal
+vivo** proprio quei due: procedura di scarto impostata `RESTRICTED` in
+Legal & Compliance, un `Attachment` inserito direttamente (bypassando
+l'upload reale, irraggiungibile qui) — `viewer@demo.com` (VIEWER solo in
+HR) riceve 403 sia su download sia su delete; `editor@demo.com` (EDITOR
+in Legal & Compliance) supera il controllo di permesso su download
+(bloccato solo dal 503 "storage non configurato", non da un 403 — prova
+che il gate RBAC funziona indipendentemente dal limite d'ambiente) e
+riesce a cancellare l'allegato, con una riga `AuditLog` scritta
+correttamente. `npx tsc --noEmit` pulito, `npm test` 108/108. Dati di
+scarto rimossi (stesso 500 innocuo di MeiliSearch non raggiungibile già
+documentato altrove sulla `DELETE` della procedura).
+
 **25 ago 2026 (3)**: Roadmap #6, continuazione — copertura test per la
 ricerca (`tests/search.test.ts`, `tests/permissions-search-visibility.test.ts`).
 **Bug RBAC reale trovato scrivendo questi test, corretto nello stesso
@@ -556,8 +588,17 @@ utenti, non per difficoltà tecnica.
    **Ricerca coperta il 25 ago 2026**, vedi voce di changelog sotto: un
    bug RBAC reale trovato scrivendo quei test (`/api/search` non filtrava
    per visibilità) è stato corretto nello stesso passaggio, non solo
-   documentato. Ancora da fare: upload allegati, componenti UI — Playwright
-   non ancora introdotto.
+   documentato. **Upload allegati coperto il 25 ago 2026 (pomeriggio)**:
+   logica pura estratta in `lib/attachments.ts` (whitelist estensioni,
+   content-type, costruzione della storage key) e testata; RBAC di
+   `GET .../download` e `DELETE /api/attachments/[id]` verificato dal vivo
+   contro un tenant reale — il flusso di upload vero e proprio
+   (`POST /api/attachments` oltre il controllo "storage configurato") non
+   è verificabile in questo sandbox: nessun demone Docker disponibile e
+   nessun accesso di rete per scaricare un binario MinIO, quindi nessun
+   object storage S3-compatible reale in questo ambiente (a differenza di
+   Postgres/Redis, avviati nativamente). Ancora da fare: componenti UI —
+   Playwright non ancora introdotto.
 
 ~~Export PDF/Word/Excel dalla pagina procedura~~ e ~~diff view tra
 versioni~~ risultavano qui come roadmap futura in versioni precedenti di
