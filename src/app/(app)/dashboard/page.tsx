@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatDate } from "@/lib/utils";
+import { visibilityWhereClause } from "@/lib/permissions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ProcedureListRow } from "@/components/dashboard/procedure-list-row";
@@ -11,6 +12,7 @@ export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
   const userId = (session!.user as any).id as string;
   const tenantId = (session!.user as any).tenantId as string;
+  const globalRole = (session!.user as any).globalRole;
 
   // Session/JWT doesn't carry jobRoleId (Fase 3a, informative-only field,
   // not worth threading through the auth callback) — read it directly.
@@ -19,15 +21,31 @@ export default async function DashboardPage() {
     select: { jobRole: { select: { id: true, name: true } } },
   });
 
+  // "Recenti"/"In scadenza"/"Per il tuo ruolo" below scan every PUBLISHED
+  // procedure tenant-wide, not just ones the viewer authored or favorited —
+  // without this, they'd surface the title/department of a DEPARTMENT- or
+  // RESTRICTED-visibility procedure to any tenant user just by being one of
+  // the 5-6 most recently updated (rule 4: permissions always through
+  // lib/permissions, same fix as GET /api/search's own visibility gap).
+  // favorites gets the same clause below, as defense in depth — toggling a
+  // favorite is gated at write time (lib/favorites.ts's toggleFavorite),
+  // but a pre-existing favorite whose procedure's visibility was tightened
+  // afterward would otherwise still show up here.
+  const visClause = await visibilityWhereClause({ id: userId, tenantId, globalRole });
+
   const [recent, favorites, announcements, dueForReview, forMyRole] = await Promise.all([
     prisma.procedure.findMany({
-      where: { tenantId, status: "PUBLISHED" },
+      where: { tenantId, status: "PUBLISHED", ...visClause },
       orderBy: { updatedAt: "desc" },
       take: 6,
       include: { department: true },
     }),
     prisma.favorite.findMany({
-      where: { userId },
+      // Same defense-in-depth as GET /api/favorites: a favorite created
+      // before that route started gating on canViewProcedure, or on a
+      // procedure whose visibility was tightened afterward, must not keep
+      // showing its title/department on the dashboard either.
+      where: { userId, procedure: { ...visClause } },
       take: 6,
       include: { procedure: { include: { department: true } } },
     }),
@@ -41,6 +59,7 @@ export default async function DashboardPage() {
         tenantId,
         status: "PUBLISHED",
         nextReviewDate: { lte: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+        ...visClause,
       },
       take: 5,
       orderBy: { nextReviewDate: "asc" },
@@ -48,7 +67,7 @@ export default async function DashboardPage() {
     }),
     currentUser?.jobRole
       ? prisma.procedure.findMany({
-          where: { tenantId, status: "PUBLISHED", jobRoles: { some: { jobRoleId: currentUser.jobRole.id } } },
+          where: { tenantId, status: "PUBLISHED", jobRoles: { some: { jobRoleId: currentUser.jobRole.id } }, ...visClause },
           take: 6,
           orderBy: { updatedAt: "desc" },
           include: { department: true },
