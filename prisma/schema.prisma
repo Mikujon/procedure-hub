@@ -913,7 +913,7 @@ model Acknowledgment {
   ipAddress      String?
   /// Which surface the confirmation came through — the compliance
   /// certificate (Fase 4) lists this per person. IN_APP for the
-  /// authenticated route, SLACK/GOOGLE_CHAT for a quick-confirm link
+  /// authenticated route, SLACK/GOOGLE_CHAT/TEAMS for a quick-confirm link
   /// clicked from that channel's reminder.
   channel        NotificationChannel @default(IN_APP)
 
@@ -1110,6 +1110,7 @@ enum NotificationChannel {
   EMAIL
   SLACK
   GOOGLE_CHAT
+  TEAMS
 }
 
 model Notification {
@@ -1139,6 +1140,7 @@ model NotificationPreference {
   emailEnabled    Boolean @default(true)
   slackEnabled    Boolean @default(true)
   gchatEnabled    Boolean @default(false)
+  teamsEnabled    Boolean @default(false)
   digestFrequency String  @default("daily") // "instant" | "daily" | "weekly"
 
   @@map("notification_preferences")
