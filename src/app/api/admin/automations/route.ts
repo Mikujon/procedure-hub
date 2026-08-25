@@ -22,7 +22,21 @@ export async function GET() {
     orderBy: { createdAt: "desc" },
     include: { createdBy: { select: { name: true, email: true } }, _count: { select: { runs: true } } },
   });
-  return NextResponse.json({ rules });
+
+  // SEND_WEBHOOK's actionConfig.authHeader is a raw Authorization header
+  // value (Bearer/Basic credentials for Jira/ServiceNow/Freshdesk) — same
+  // "never echo a secret back to the client" rule GET /api/admin/integrations
+  // applies to its own config, just keyed by field name here since
+  // actionConfig's shape varies by actionType rather than matching a
+  // generic token/secret/key/password regex.
+  const sanitized = rules.map((r) => {
+    if (r.actionType !== "SEND_WEBHOOK") return r;
+    const actionConfig = r.actionConfig as Record<string, any>;
+    if (!actionConfig?.authHeader) return r;
+    return { ...r, actionConfig: { ...actionConfig, authHeader: "••••••••" } };
+  });
+
+  return NextResponse.json({ rules: sanitized });
 }
 
 export async function POST(req: NextRequest) {

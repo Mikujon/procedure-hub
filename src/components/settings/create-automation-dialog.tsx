@@ -47,6 +47,7 @@ export function CreateAutomationDialog({ onClose, onCreated }: { onClose: () => 
   const [body, setBody] = useState("");
   const [recipients, setRecipients] = useState("OWNER");
   const [webhookUrl, setWebhookUrl] = useState("");
+  const [webhookAuthHeader, setWebhookAuthHeader] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -83,7 +84,7 @@ export function CreateAutomationDialog({ onClose, onCreated }: { onClose: () => 
         actionType === "SEND_NOTIFICATION"
           ? { title: title.trim(), body: body.trim() || undefined, recipients }
           : actionType === "SEND_WEBHOOK"
-            ? { url: webhookUrl.trim() }
+            ? { url: webhookUrl.trim(), authHeader: webhookAuthHeader.trim() || undefined }
             : { status: "ARCHIVED" };
 
       const conditions =
@@ -263,6 +264,26 @@ export function CreateAutomationDialog({ onClose, onCreated }: { onClose: () => 
               <p className="mt-1 text-[11px] text-muted-foreground">
                 Riceve un POST JSON con i dati della procedura — l'URL di un incoming webhook di Teams, Jira,
                 ServiceNow o un endpoint personalizzato.
+              </p>
+            </div>
+          )}
+
+          {actionType === "SEND_WEBHOOK" && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Header Authorization (opzionale)
+              </label>
+              <input
+                type="password"
+                value={webhookAuthHeader}
+                onChange={(e) => setWebhookAuthHeader(e.target.value)}
+                placeholder="Bearer ... oppure Basic ..."
+                className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm outline-none focus:border-primary"
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Serve solo per chiamare direttamente le API di Jira/ServiceNow/Freshdesk (richiedono
+                autenticazione su ogni richiesta) — un incoming webhook di Teams/Slack/Jira Automation porta
+                già il proprio segreto nell&apos;URL e non ne ha bisogno.
               </p>
             </div>
           )}
