@@ -131,6 +131,56 @@ prisma/seed.ts                  dati demo (dipartimenti, utenti, ruoli, una proc
 del codice/UI reali — la cronologia sotto mostra quanto spesso questo file
 si è disallineato in passato.*
 
+**25 ago 2026 (5)**: Roadmap #6 — Playwright introdotto (ultimo pezzo
+mancante dell'item), `e2e/` con 7 test su 3 file (`login.spec.ts`,
+`search-visibility.spec.ts`, `dashboard-visibility.spec.ts`), fixture
+dedicata (`e2e/helpers/fixtures.ts`, tenant di scarto isolato con utenti
+con password reali — separata da `tests/helpers/test-tenant.ts`, i cui
+utenti non hanno `passwordHash` perché quei test chiamano funzioni
+`lib/` direttamente e non fanno mai un login reale). Browser Chromium
+pre-installato in questo sandbox su una cache path fissa
+(`/opt/pw-browsers`) non allineata alla versione di `@playwright/test`
+appena installata: `playwright.config.ts` legge un
+`PLAYWRIGHT_CHROMIUM_PATH` opzionale (non impostato di default, quindi
+innocuo su qualunque altra macchina/CI) invece di un percorso fisso nel
+file — impostato solo per l'esecuzione in questo ambiente.
+
+**Due bug RBAC reali trovati nel primo giro di sviluppo di questa
+suite**, non quello che la suite doveva coprire in origine (il fix di
+`/api/search` di stamattina): il primo test di ricerca falliva in un
+modo che ha portato dritto al secondo bug. **Bug 1**: la dashboard
+(`app/(app)/dashboard/page.tsx`) — sezioni "Aggiornate di recente", "In
+scadenza" e "Per il tuo ruolo" — interrogava ogni procedura PUBLISHED
+dell'intero tenant senza mai applicare `visibilityWhereClause`: un
+utente nuovo, senza alcuna appartenenza a un dipartimento, vedeva titolo
+e dipartimento di una procedura RESTRICTED/DEPARTMENT già al primo
+accesso alla propria dashboard — stessa classe di difetto del bug di
+`/api/search` corretto poche ore prima nella stessa sessione, stavolta
+sulla home page invece che nella ricerca. **Bug 2**, trovato verificando
+il primo: `POST /api/favorites` (toggle preferito) controllava solo
+l'isolamento di tenant, mai `canViewProcedure` — un utente poteva
+aggiungere ai preferiti (e quindi fissare in modo permanente sulla
+propria dashboard) una procedura RESTRICTED/DEPARTMENT a cui non aveva
+alcun accesso. Nuovo `src/lib/favorites.ts` (`toggleFavorite`,
+`listVisibleFavorites`) estratto da `api/favorites/route.ts` per renderlo
+testabile: la creazione di un nuovo preferito ora richiede
+`canViewProcedure`; la rimozione resta sempre permessa anche per una
+procedura non più visibile (non rivela nulla, permette solo di ripulire
+un proprio riferimento ormai stantio). Stesso `visibilityWhereClause`
+applicato anche al widget preferiti della dashboard e a
+`GET /api/favorites`, come difesa in profondità per preferiti creati
+prima di questo fix. 7 nuovi test Vitest (`tests/favorites.test.ts`) più
+i 7 Playwright, entrambi verificati dal vivo: dashboard e ricerca
+mostrano/nascondono correttamente la procedura riservata a seconda
+dell'appartenenza al dipartimento, contro un vero browser Chromium e un
+vero Postgres. `vitest.config.mts` ristretto esplicitamente a
+`tests/**/*.test.ts` (altrimenti il glob di default di Vitest
+raccoglieva anche `e2e/*.spec.ts`, che il runner di Playwright rifiuta se
+eseguito da un altro test runner). `npx tsc --noEmit` pulito, `npm test`
+117/117, `npm run test:e2e` 7/7. Dati di scarto rimossi (un tenant
+Playwright di un run precedente rimasto per un'interruzione a metà,
+ripulito a mano).
+
 **25 ago 2026 (4)**: Roadmap #6, continuazione — copertura test per
 l'upload allegati. Estratta in `src/lib/attachments.ts` la logica pura
 già presente ma inline in `api/attachments/route.ts` (whitelist
@@ -597,8 +647,14 @@ utenti, non per difficoltà tecnica.
    è verificabile in questo sandbox: nessun demone Docker disponibile e
    nessun accesso di rete per scaricare un binario MinIO, quindi nessun
    object storage S3-compatible reale in questo ambiente (a differenza di
-   Postgres/Redis, avviati nativamente). Ancora da fare: componenti UI —
-   Playwright non ancora introdotto.
+   Postgres/Redis, avviati nativamente). **Playwright introdotto il 25 ago
+   2026 (sera)** (`playwright.config.ts`, `npm run test:e2e`, cartella
+   `e2e/`) — vedi voce di changelog sotto: **due bug RBAC reali trovati
+   nel primo giro di sviluppo di questa suite**, non nel codice che la
+   suite doveva coprire in origine (il fix di `/api/search`), corretti
+   nello stesso passaggio: la dashboard e la creazione di un preferito non
+   applicavano `visibilityWhereClause`/`canViewProcedure`. Item #6 della
+   roadmap ora completo su tutti i fronti indicati.
 
 ~~Export PDF/Word/Excel dalla pagina procedura~~ e ~~diff view tra
 versioni~~ risultavano qui come roadmap futura in versioni precedenti di
