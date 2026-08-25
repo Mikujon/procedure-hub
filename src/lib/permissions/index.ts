@@ -60,6 +60,46 @@ export async function canViewProcedure(user: ActingUser, procedureId: string): P
 }
 
 /**
+ * Given a set of procedure ids a search engine (MeiliSearch or its Postgres
+ * fallback, see lib/search.ts/api/search/route.ts) already returned as
+ * candidates, returns only the ones `user` may actually see — PUBLISHED
+ * *and* passing the same visibility rule as canViewProcedure/
+ * visibilityWhereClause — in the same order as `hitIds`, dropping the rest.
+ *
+ * Why this exists rather than trusting the search engine's own result set:
+ * the engine's own filters (status/department/tags) are index-side and, for
+ * MeiliSearch specifically, built from a string filter DSL that a crafted
+ * query param could in principle break out of (see
+ * escapeMeiliFilterValue in lib/search.ts for the injection this guards
+ * against at the source) — visibility scoping was never enforced at the
+ * index layer at all, only `status = PUBLISHED`. So a hit list is only ever
+ * a set of *candidates*; this is the one place, shared by every caller, that
+ * turns candidates into what the requesting user is actually allowed to see,
+ * the same "search picks candidates, Postgres decides visibility" split
+ * api/ai/ask/route.ts already relied on before this was pulled out here.
+ */
+export async function filterVisibleProcedureHits(
+  user: ActingUser,
+  tenantId: string,
+  hitIds: string[]
+): Promise<{ id: string; title: string; code: string; summary: string | null; type: string; departmentName: string }[]> {
+  if (hitIds.length === 0) return [];
+
+  const visible = await prisma.procedure.findMany({
+    where: { id: { in: hitIds }, tenantId, status: "PUBLISHED", ...(await visibilityWhereClause(user)) },
+    select: { id: true, title: true, code: true, summary: true, type: true, department: { select: { name: true } } },
+  });
+  const byId = new Map(visible.map((p) => [p.id, p]));
+
+  // Preserve the search engine's relevance order — the findMany above
+  // doesn't guarantee it back.
+  return hitIds
+    .map((id) => byId.get(id))
+    .filter((p): p is NonNullable<typeof p> => p !== undefined)
+    .map((p) => ({ id: p.id, title: p.title, code: p.code, summary: p.summary, type: p.type, departmentName: p.department.name }));
+}
+
+/**
  * Same rule as canViewProcedure, expressed as a Prisma `where` fragment
  * instead of a per-row check — for list endpoints, where calling
  * canViewProcedure once per row would be an N+1. ADMIN bypasses (returns an
