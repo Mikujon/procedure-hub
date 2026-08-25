@@ -299,6 +299,65 @@ confermato anche nel pannello 3.1 (spunta verde, "LEG-PRO-001 — ... · 2
 min fa"). Dati di test rimossi a fine verifica (regola, run iniettati,
 notifica, pagine di prova create per errore durante i test precedenti).
 
+**Estensione, 25 ago 2026** (Roadmap #5): questo webhook generico
+sbloccava già Jira via il suo trigger "Automation for Jira — Incoming
+webhook" (il segreto vive nell'URL, come per Teams/Slack) ma non
+ServiceNow/Freshdesk chiamati direttamente sulle loro API REST native, che
+richiedono un header `Authorization` (Basic/Bearer) su ogni richiesta, non
+un URL con segreto incorporato. Nuovo campo opzionale
+`SendWebhookConfig.authHeader` (`src/lib/automations/types.ts`): il valore
+*intero* dell'header Authorization, incollato così com'è dall'admin (non
+un selettore di schema Basic/Bearer/altro — Jira/ServiceNow/Freshdesk
+usano già 3 forme diverse, "aiutare" con un campo strutturato avrebbe
+solo spostato il problema a un quarto provider). `executeSendWebhook`
+(`actions.ts`) lo inoltra come header `Authorization` quando presente.
+UI: campo password "Header Authorization (opzionale)" in
+`create-automation-dialog.tsx`, sotto l'URL webhook.
+
+Il precedente di `GET /api/admin/integrations` (che maschera i campi che
+matchano `/token|secret|key|password/i` in `Integration.config`) non si
+applica qui per nome: "authHeader"/"Authorization" non matcha quella
+regex, e `actionConfig` comunque cambia forma per `actionType` (non è un
+one-size-fits-all come `Integration.config`). Mascherato quindi in modo
+esplicito per nome di campo (`actionConfig.authHeader` → `"••••••••"`)
+in entrambe le route che possono restituire una regola già salvata
+(`GET /api/admin/automations` e la risposta di
+`PATCH /api/admin/automations/[id]`, che pur non toccando `actionConfig`
+lo restituisce comunque per intero da Prisma) — scritto così fin dalla
+prima stesura, non un buco scoperto dopo. **Nota collaterale trovata
+verificando questo, non corretta (fuori scope)**: lo stesso
+`GET /api/admin/integrations` non maschera `webhookUrl` di Slack/Google
+Chat/Teams nonostante un URL di incoming webhook sia esso stesso un
+segreto — non è una falla nuova introdotta qui (la route è già
+ADMIN-only per tenant, quindi non un'escalation reale rispetto a chi può
+già scriverlo), solo un'incoerenza pre-esistente notata perché altrimenti
+si perderebbe di nuovo.
+
+7 nuovi test (`tests/automations-webhook-action.test.ts`): schema zod con e
+senza `authHeader` (e il rifiuto di una stringa vuota, per non mandare mai
+un header Authorization silenziosamente vuoto), header assente per default,
+header inoltrato verbatim quando configurato, payload procedura invariato
+in entrambi i casi, e che una risposta 401 rilanci comunque l'eccezione.
+**Verificato anche dal vivo**: un "server di eco" locale che risponde 401
+se l'header Authorization non combacia esattamente e 200 altrimenti,
+regola reale creata via API con quell'header, procedura di scarto critica
+portata a mano attraverso l'intera pipeline (submit → approvazione
+compliance → approvazione management, ognuna via `POST .../decide` reale)
+fino a `PUBLISHED` — il server di eco ha ricevuto l'header Authorization
+corretto insieme al payload procedura, `AutomationRun` con `status:
+SUCCESS`. Verificato anche il mascheramento: `POST` (che crea la regola)
+restituisce l'header in chiaro nella sua stessa risposta — non un leak,
+è l'admin che lo ha appena scritto — ma il successivo `GET` sulla lista
+lo mostra correttamente come `"••••••••"`. `npx tsc --noEmit` pulito,
+`npm test` 83/83. Dati di scarto rimossi (regola, procedura — quest'ultima
+con lo stesso 500 innocuo di MeiliSearch non raggiungibile già
+documentato altrove, confermato via `dev.log` e query dirette a Postgres).
+
+SharePoint resta esplicitamente fuori scope: non è un consumer di
+webhook "ricevi un evento, fai qualcosa" come Jira/ServiceNow/Freshdesk —
+è storage/collaborazione documentale, andrebbe disegnato via Graph API +
+OAuth, una forma di integrazione del tutto diversa.
+
 ### 3.4 Nuovi trigger, in coppia con la Traccia 2 — **"Commento aggiunto" fatto, 21 ago 2026; "Page verificata" no, per scelta**
 
 "Page verificata" (si aggancia a 2.4) e "Commento aggiunto" (si aggancia a

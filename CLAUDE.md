@@ -131,6 +131,40 @@ prisma/seed.ts                  dati demo (dipartimenti, utenti, ruoli, una proc
 del codice/UI reali — la cronologia sotto mostra quanto spesso questo file
 si è disallineato in passato.*
 
+**25 ago 2026 (2)**: Roadmap #5, continuazione — header `Authorization`
+opzionale sull'azione `SEND_WEBHOOK` del motore di automazioni (Traccia
+3.3, già esistente dal 21 ago 2026). Quel webhook generico sbloccava già
+Jira via il suo trigger "Automation for Jira — Incoming webhook" (segreto
+nell'URL, come Teams/Slack), ma non ServiceNow/Freshdesk chiamati
+direttamente sulle loro API REST native, che vogliono un header
+`Authorization` (Basic/Bearer) su ogni richiesta. Nuovo
+`SendWebhookConfig.authHeader` (`lib/automations/types.ts`): l'intero
+valore dell'header, incollato così com'è dall'admin — non un selettore
+Basic/Bearer/altro, perché Jira/ServiceNow/Freshdesk usano già 3 forme
+diverse e "aiutare" con un campo strutturato sposterebbe solo il problema
+a un quarto provider. `executeSendWebhook` lo inoltra quando presente; UI
+in `create-automation-dialog.tsx` (campo password, sotto l'URL). Mascherato
+per nome campo (non c'è un regex generico che lo becchi come fa
+`GET /api/admin/integrations` sui suoi `token|secret|key|password`) in
+entrambe le route che possono restituire una regola salvata — scritto
+così fin dalla prima stesura. **Nota collaterale trovata verificando
+questo, non corretta (fuori scope)**: `GET /api/admin/integrations`
+stesso non maschera `webhookUrl` di Slack/Google Chat/Teams nonostante un
+URL di incoming webhook sia esso stesso un segreto — non una falla nuova
+(route già ADMIN-only per tenant), solo un'incoerenza pre-esistente
+segnalata qui. 7 nuovi test (`tests/automations-webhook-action.test.ts`).
+**Verificato anche dal vivo**: un server di eco locale che risponde 401
+se l'Authorization non combacia esattamente, regola reale creata via API,
+procedura di scarto critica portata a mano attraverso l'intera pipeline
+(submit → compliance → management, ognuna via `decide` reale) fino a
+`PUBLISHED` — il server di eco ha ricevuto l'header corretto insieme al
+payload procedura, `AutomationRun` con `status: SUCCESS`; mascheramento
+confermato sul `GET` successivo alla creazione. `npx tsc --noEmit`
+pulito, `npm test` 83/83. Dati di scarto rimossi (regola, procedura —
+quest'ultima con lo stesso 500 innocuo di MeiliSearch non raggiungibile
+già documentato altrove). Dettagli completi in Traccia 3.3 (estensione)
+di `docs/REDESIGN-FEATURE-AUTOMATION-PLAN.md`.
+
 **25 ago 2026**: Roadmap #5 — adapter Microsoft Teams
 (`src/lib/integrations/teams.ts`), stesso ruolo di `slack.ts`/`gchat.ts`
 nel fan-out di `notifyEvent()` (regola architetturale 6): nuovo
@@ -441,14 +475,22 @@ utenti, non per difficoltà tecnica.
    sotto per i dettagli); modalità bot (DM diretta) resta un TODO esplicito
    per lo stesso motivo del bot mode di `gchat.ts`: serve un Azure Bot
    registrato + una conversation reference per utente, non verificabile
-   senza un tenant Azure reale. **SharePoint/Jira/Freshdesk/ServiceNow
-   restano da fare** — attenzione: non sono canali di notifica come
-   Slack/Teams/Google Chat, quindi non basta copiare lo stesso pattern.
-   Jira/Freshdesk/ServiceNow sono sistemi di ticketing (l'integrazione
-   naturale è "crea un ticket quando succede X", non "manda un messaggio
-   di chat"); SharePoint è storage/collaborazione documentale, non
-   messaggistica. Ognuno va disegnato per quello che è, non forzato nella
-   forma `sendXNotification()`.
+   senza un tenant Azure reale. **Jira/ServiceNow/Freshdesk: non più "da
+   fare da zero" come scritto qui il 25 ago 2026 mattina** — non sono
+   canali di notifica come Slack/Teams/Google Chat (sono sistemi di
+   ticketing, l'integrazione naturale è "crea un ticket quando succede X",
+   non "manda un messaggio di chat"), ma l'azione `SEND_WEBHOOK` del
+   motore di automazioni (Traccia 3.3, 21 ago 2026) già li sblocca senza
+   un adapter dedicato per provider — esteso lo stesso giorno pomeriggio
+   con un header `Authorization` opzionale (`SendWebhookConfig.authHeader`)
+   proprio per poter chiamare le loro API REST native direttamente, non
+   solo un incoming webhook stile Teams/Slack con il segreto nell'URL.
+   Vedi Traccia 3.3 in `docs/REDESIGN-FEATURE-AUTOMATION-PLAN.md` per i
+   dettagli e la verifica dal vivo. **SharePoint resta esplicitamente
+   fuori scope**, ed è l'unico dei quattro per cui serve davvero un
+   disegno proprio: non è un consumer di webhook "ricevi un evento, fai
+   qualcosa" — è storage/collaborazione documentale, richiederebbe
+   Graph API + OAuth, una forma di integrazione del tutto diversa.
 6. **Test automatici** — **avviata, 21 ago 2026**: prima infrastruttura
    Vitest (`vitest.config.mts`, `npm test`), 37 test in `tests/`, i quattro
    flussi indicati come priorità sono coperti — `tests/permissions.test.ts`
