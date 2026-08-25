@@ -9,6 +9,7 @@ const CHANNEL_LABEL: Record<string, string> = {
   EMAIL: "Email",
   SLACK: "Slack",
   GOOGLE_CHAT: "Google Chat",
+  TEAMS: "Microsoft Teams",
 };
 
 /** Generates the Read & Acknowledge compliance certificate for a fully-completed campaign — see New plan/04-read-ack-escalation.md. */

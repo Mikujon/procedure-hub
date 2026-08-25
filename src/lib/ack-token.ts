@@ -2,8 +2,8 @@ import jwt from "jsonwebtoken";
 
 /**
  * Signs/verifies the one-click Read & Acknowledge confirm link sent via
- * Slack/Google Chat/email — same jsonwebtoken + separate-secret pattern as
- * COLLAB_JWT_SECRET (src/app/api/procedures/[id]/collab-token/route.ts).
+ * Slack/Google Chat/Teams/email — same jsonwebtoken + separate-secret pattern
+ * as COLLAB_JWT_SECRET (src/app/api/procedures/[id]/collab-token/route.ts).
  * The token itself is the proof of authorization for quick-confirm (no
  * session/cookie involved — the click comes from outside the app), so a
  * long expiry is deliberate: it must still work near the end of a 14-day
@@ -13,7 +13,7 @@ export interface AckTokenPayload {
   userId: string;
   procedureId: string;
   versionNumber: number;
-  channel: "SLACK" | "GOOGLE_CHAT";
+  channel: "SLACK" | "GOOGLE_CHAT" | "TEAMS";
 }
 
 export function signAckToken(payload: AckTokenPayload): string {

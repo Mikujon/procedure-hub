@@ -25,7 +25,8 @@ interface NotifyEventInput {
  *   2. Slack, if the tenant has an enabled Slack integration and the
  *      recipient opted in.
  *   3. Google Chat, same conditions.
- *   4. Email is left as a stub (Resend client is wired but not called here —
+ *   4. Microsoft Teams, same conditions.
+ *   5. Email is left as a stub (Resend client is wired but not called here —
  *      hook into notifyEvent once transactional templates are designed).
  */
 export async function notifyEvent(input: NotifyEventInput) {
