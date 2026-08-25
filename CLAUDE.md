@@ -131,6 +131,50 @@ prisma/seed.ts                  dati demo (dipartimenti, utenti, ruoli, una proc
 del codice/UI reali — la cronologia sotto mostra quanto spesso questo file
 si è disallineato in passato.*
 
+**25 ago 2026 (3)**: Roadmap #6, continuazione — copertura test per la
+ricerca (`tests/search.test.ts`, `tests/permissions-search-visibility.test.ts`).
+**Bug RBAC reale trovato scrivendo questi test, corretto nello stesso
+passaggio**: `GET /api/search` non applicava alcun filtro di visibilità —
+un utente autenticato qualunque poteva vedere titolo/sommario/dipartimento
+di una procedura DEPARTMENT o RESTRICTED anche senza appartenenza a quel
+dipartimento, perché sia il percorso MeiliSearch sia il fallback Postgres
+filtravano solo per `status = PUBLISHED`, mai per `visibility` (regola
+architetturale 4 violata: i controlli di permesso vanno sempre da
+`lib/permissions`, non reimplementati/omessi in una route). Nuovo
+`filterVisibleProcedureHits()` in `lib/permissions/index.ts`: dato un
+elenco di id "candidati" da un motore di ricerca, restituisce solo quelli
+che l'utente può davvero vedere (status PUBLISHED **e** la stessa regola
+di `canViewProcedure`), nello stesso ordine di rilevanza — lo stesso
+pattern "il motore di ricerca propone, Postgres decide la visibilità" che
+`api/ai/ask/route.ts` già usava per sé stesso (per lo stesso motivo:
+citare una fonte in una risposta AI richiede la stessa garanzia), ora
+condiviso da entrambe le route invece che duplicato. **Secondo bug
+correlato, trovato nello stesso passaggio**: `lib/search.ts` interpolava
+`departmentId`/`type`/`tags` — tutti presi da query string, quindi
+manipolabili dal chiamante — senza escaping dentro l'espressione filtro
+di MeiliSearch (`tags = "${t}"`), la stessa classe di difetto di una SQL
+costruita per concatenazione: un valore con una `"` avrebbe potuto uscire
+dalla stringa e alterare il filtro, incluso il vincolo `status =
+PUBLISHED` stesso. Nuovo `escapeMeiliFilterValue()` applicato a tutti e
+tre i valori. Il primo bug (RBAC) è quello che conta di più in pratica
+— anche se l'injection avesse aggirato `status = PUBLISHED`, avrebbe
+comunque incontrato il ricontrollo Postgres di `filterVisibleProcedureHits`
+per bloccarla; ma erano due difetti reali indipendenti nella stessa area,
+corretti entrambi. Applicato anche a `api/ai/ask/route.ts`, che aveva già
+il pattern giusto ma senza il ricontrollo `status`. 13 nuovi test.
+**Verificato anche dal vivo**, non solo con i test contro il tenant di
+prova: procedura reale duplicata, impostata `RESTRICTED` nel dipartimento
+Legal & Compliance — `viewer@demo.com` (VIEWER solo in HR) non la trova
+più in `/api/search`, mentre `editor@demo.com` (membro di Legal &
+Compliance) e l'ADMIN la trovano entrambi correttamente. `npx tsc
+--noEmit` pulito, `npm test` 96/96. Procedura di scarto rimossa (stesso
+500 innocuo di MeiliSearch non raggiungibile già documentato altrove,
+confermato via query diretta a Postgres). MeiliSearch non è comunque
+raggiungibile in questo sandbox, quindi il percorso Meili vero e proprio
+non è stato eseguibile dal vivo end-to-end — solo il fallback Postgres
+(che condivide la stessa `filterVisibleProcedureHits`, coperta a sua volta
+dai 13 test contro il DB reale) — verificato dal vivo.
+
 **25 ago 2026 (2)**: Roadmap #5, continuazione — header `Authorization`
 opzionale sull'azione `SEND_WEBHOOK` del motore di automazioni (Traccia
 3.3, già esistente dal 21 ago 2026). Quel webhook generico sbloccava già
@@ -507,9 +551,13 @@ utenti, non per difficoltà tecnica.
    un Tenant isolato (`tests/helpers/test-tenant.ts`) e lo cancella in
    `afterAll`; solo Slack/Google Chat (BullMQ) e l'indicizzazione
    MeiliSearch sono mockati (`tests/setup.ts`, infrastruttura esterna già
-   verificata altrove, non l'oggetto di questo test). Ancora da fare: motore
-   di export, ricerca, upload allegati, componenti UI — Playwright non
-   ancora introdotto.
+   verificata altrove, non l'oggetto di questo test). **Motore di export
+   coperto il 24 ago 2026** (Traccia 4.4, vedi sopra — bookmark PDF/Word).
+   **Ricerca coperta il 25 ago 2026**, vedi voce di changelog sotto: un
+   bug RBAC reale trovato scrivendo quei test (`/api/search` non filtrava
+   per visibilità) è stato corretto nello stesso passaggio, non solo
+   documentato. Ancora da fare: upload allegati, componenti UI — Playwright
+   non ancora introdotto.
 
 ~~Export PDF/Word/Excel dalla pagina procedura~~ e ~~diff view tra
 versioni~~ risultavano qui come roadmap futura in versioni precedenti di
