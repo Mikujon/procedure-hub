@@ -106,6 +106,22 @@ export function buildSearchDocument(
   };
 }
 
+/**
+ * MeiliSearch's filter expressions are a string DSL, not a parameterized
+ * query — a value dropped into `attr = "<value>"` unescaped lets whoever
+ * controls that value break out of the quoted literal and append arbitrary
+ * filter syntax of their own (e.g. `OR status = "DRAFT"`), the same class of
+ * bug as string-built SQL. `departmentId`/`type`/each `tags` entry below all
+ * come straight from a request query string (see api/search/route.ts), so
+ * every value interpolated into a filter clause must go through this first.
+ * Per Meili's filter syntax, a double-quoted string escapes `\` and `"` with
+ * a leading backslash — the same escaping this needs, nothing Meili-specific
+ * beyond that.
+ */
+export function escapeMeiliFilterValue(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
 export async function searchProcedures(
   tenantId: string,
   query: string,
@@ -113,9 +129,11 @@ export async function searchProcedures(
 ) {
   const index = tenantIndex(tenantId);
   const filterClauses: string[] = [`status = PUBLISHED`];
-  if (filters.departmentId) filterClauses.push(`departmentId = "${filters.departmentId}"`);
-  if (filters.type) filterClauses.push(`type = "${filters.type}"`);
-  if (filters.tags?.length) filterClauses.push(`(${filters.tags.map((t) => `tags = "${t}"`).join(" OR ")})`);
+  if (filters.departmentId) filterClauses.push(`departmentId = "${escapeMeiliFilterValue(filters.departmentId)}"`);
+  if (filters.type) filterClauses.push(`type = "${escapeMeiliFilterValue(filters.type)}"`);
+  if (filters.tags?.length) {
+    filterClauses.push(`(${filters.tags.map((t) => `tags = "${escapeMeiliFilterValue(t)}"`).join(" OR ")})`);
+  }
 
   return index.search(query, {
     filter: filterClauses.join(" AND "),
