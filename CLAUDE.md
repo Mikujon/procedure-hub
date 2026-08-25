@@ -131,6 +131,54 @@ prisma/seed.ts                  dati demo (dipartimenti, utenti, ruoli, una proc
 del codice/UI reali — la cronologia sotto mostra quanto spesso questo file
 si è disallineato in passato.*
 
+**25 ago 2026**: Roadmap #5 — adapter Microsoft Teams
+(`src/lib/integrations/teams.ts`), stesso ruolo di `slack.ts`/`gchat.ts`
+nel fan-out di `notifyEvent()` (regola architetturale 6): nuovo
+`NotificationChannel.TEAMS` e `NotificationPreference.teamsEnabled`
+(migration `add_teams_notification_channel`, default `false` come
+`gchatEnabled` — opt-in esplicito, non opt-out come Slack). Solo modalità
+webhook implementata (`config = { mode: "webhook", webhookUrl }`): il
+payload è un Adaptive Card avvolto in `attachments`, non il vecchio
+formato `MessageCard` — Microsoft ha ritirato i connector "Incoming
+Webhook" di Office 365 per Teams (dismissione completata nel 2025),
+sostituiti dall'app "Workflows" (un flusso Power Automate con trigger
+HTTP) che si aspetta esattamente questa busta. Modalità bot (DM diretta
+per utente) lasciata come TODO esplicito, stesso motivo del TODO di
+`gchat.ts`: richiede un Azure Bot registrato con canale Teams abilitato
+più una conversation reference per utente salvata altrove — non
+verificabile senza un tenant Azure reale, quindi non implementata "a
+tentativi". Toccati anche `lib/ack-token.ts` (union del `channel` estesa
+a `"TEAMS"`, per il link "Conferma lettura" da Teams) e il certificato
+PDF di compliance (`ack-certificate/route.ts`, mancava l'etichetta
+"Microsoft Teams" — sarebbe comunque comparso "TEAMS" grezzo grazie al
+fallback esistente, non un crash, ma impreciso su un documento di
+compliance). **Bug reale trovato mentre si cercava dove agganciare
+l'adapter, non introdotto da questo lavoro**: non esiste (e non è mai
+esistita) nessuna UI admin per configurare le integrazioni — la pagina
+`/admin/settings` promette un link "Slack, Google Chat, e canali di
+notifica" che in realtà punta alla dashboard KPI (`/admin`), che non ha
+alcuna sezione integrazioni; l'unico modo reale di configurare Slack o
+Google Chat oggi è una chiamata diretta a `POST /api/admin/integrations`.
+Non corretto in questo passaggio (fuori scope per l'item #5 della
+roadmap, serve la sua UI dedicata), solo verificato e segnalato qui
+perché altrimenti si sarebbe scoperto di nuovo alla prossima sessione.
+6 nuovi test (`tests/integrations-teams.test.ts`, `fetch` mockato — è
+I/O di rete, non DB — per verificare la busta Adaptive Card, azioni
+condizionali, e che né una config incompleta né un fallimento di rete
+facciano mai propagare un'eccezione fuori dal fan-out). **Verificato
+anche dal vivo**: server dev + worker notifiche reali contro
+Postgres/Redis locali, un listener HTTP locale come sostituto del
+webhook Workflows di Teams, integrazione registrata via
+`POST /api/admin/integrations`, una procedura di scarto critica
+(`isCritical: true`, così `resolveDefaultRecipients` notifica l'intero
+tenant) sottoposta a `submitForReview` reale — il listener ha ricevuto
+un vero payload Adaptive Card con titolo, azione "Apri in Procedure Hub"
+e URL corretti. `npx tsc --noEmit` pulito, `npm test` 76/76. Dati di
+test rimossi a fine verifica (riga `Integration`, riga
+`NotificationPreference` di scarto, procedura di scarto — quest'ultima
+con lo stesso 500 innocuo di MeiliSearch non raggiungibile già
+documentato altrove, confermato via query diretta a Postgres).
+
 **24 ago 2026 (5)**: Traccia 4.4 — segnalibri PDF/Word reali per il
 blocco `TABLE_OF_CONTENTS` esportato: prima era una lista puntata con lo
 stesso testo dei titoli, non collegata a nulla. `lib/export/content-blocks.ts`
@@ -388,8 +436,19 @@ utenti, non per difficoltà tecnica.
    reale finché il motore nuovo non ha girato un ciclo di produzione senza
    incidenti (conseguenze di compliance reali se si rompono).
 5. **Teams / SharePoint / Jira / Freshdesk / ServiceNow**: `Integration.type`
-   li prevede già nello schema; ogni adapter segue lo stesso pattern di
-   `lib/integrations/slack.ts`.
+   li prevede già nello schema. **Microsoft Teams fatto, 25 ago 2026**
+   (`lib/integrations/teams.ts`, modalità webhook — vedi voce di changelog
+   sotto per i dettagli); modalità bot (DM diretta) resta un TODO esplicito
+   per lo stesso motivo del bot mode di `gchat.ts`: serve un Azure Bot
+   registrato + una conversation reference per utente, non verificabile
+   senza un tenant Azure reale. **SharePoint/Jira/Freshdesk/ServiceNow
+   restano da fare** — attenzione: non sono canali di notifica come
+   Slack/Teams/Google Chat, quindi non basta copiare lo stesso pattern.
+   Jira/Freshdesk/ServiceNow sono sistemi di ticketing (l'integrazione
+   naturale è "crea un ticket quando succede X", non "manda un messaggio
+   di chat"); SharePoint è storage/collaborazione documentale, non
+   messaggistica. Ognuno va disegnato per quello che è, non forzato nella
+   forma `sendXNotification()`.
 6. **Test automatici** — **avviata, 21 ago 2026**: prima infrastruttura
    Vitest (`vitest.config.mts`, `npm test`), 37 test in `tests/`, i quattro
    flussi indicati come priorità sono coperti — `tests/permissions.test.ts`
