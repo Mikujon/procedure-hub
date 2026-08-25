@@ -10,3 +10,7 @@ build/
 .vercel
 tsconfig.tsbuildinfo
 .claude/scheduled_tasks.lock
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
