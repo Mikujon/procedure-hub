@@ -131,6 +131,66 @@ prisma/seed.ts                  dati demo (dipartimenti, utenti, ruoli, una proc
 del codice/UI reali — la cronologia sotto mostra quanto spesso questo file
 si è disallineato in passato.*
 
+**2 set 2026**: Roadmap #5 — integrazione SharePoint, l'ultimo dei
+cinque provider rimasti e l'unico per cui serviva davvero un disegno
+proprio (non un canale di notifica come Slack/Teams/Google Chat, non
+sbloccabile con il webhook generico come Jira/ServiceNow/Freshdesk): è
+storage documentale via Microsoft Graph, con un flusso OAuth2 diverso da
+tutti gli altri. Nuovo `Integration.type = SHAREPOINT`, `config = {
+azureTenantId, clientId, clientSecret, siteId, drivePath }` — una
+seconda app registration Azure AD, distinta da quella SSO già esistente
+in `lib/auth.ts` (`AZURE_AD_CLIENT_ID`/ecc., permessi delegati,
+un'app per l'intero deployment): questa serve il permesso applicativo
+`Sites.ReadWrite.All` con consenso admin, configurata per-tenant come
+Slack/Google Chat/Teams già sono. `lib/integrations/sharepoint-auth.ts`:
+OAuth2 client-credentials verso l'endpoint token di Azure AD (stesso
+pattern RFC-standard di `google-auth.ts`, solo grant type diverso).
+`lib/integrations/sharepoint.ts`: `PUT` diretto su
+`/sites/{siteId}/drive/root:/{path}:/content` (upload semplice, fino a
+4MB — sufficiente per qualunque export PDF di una procedura; sopra
+quella soglia Graph richiede una upload session a chunk, non
+implementata, nessun export si è mai avvicinato a quella dimensione).
+`lib/sharepoint-sync.ts` orchestra il tutto dietro un'unica funzione
+testabile: richiede `canEditProcedure` (stessa soglia di autorità di un
+allegato, non una semplice visualizzazione), sincronizza solo contenuto
+già `PUBLISHED` (stessa regola di `syncSearchIndex` per MeiliSearch,
+applicata a un secondo sistema esterno), genera il PDF con lo stesso
+`generateProcedurePdf` dell'export manuale, e scrive un `AuditLog` con
+`action: EXPORT` (mai usata finora in questo codebase — nemmeno il
+bottone "Esporta" manuale la scrive, una lacuna pre-esistente notata ma
+non corretta qui, fuori scope). Bottone "SharePoint" sulla pagina
+procedura (`sharepoint-sync-button.tsx`), visibile solo se procedura
+pubblicata, utente con diritti di modifica, e integrazione abilitata per
+il tenant. **Bug reale trovato scrivendo la verifica dal vivo**: la
+route `POST .../sync-sharepoint` non aveva alcun try/catch attorno alla
+chiamata reale a Graph — un fallimento del token exchange o dell'upload
+sarebbe propagato come eccezione non gestita fino a un 500 generico di
+Next.js, senza messaggio utile per il toast del bottone (a differenza di
+`executeSendWebhook`, che rilancia deliberatamente l'errore ma lo fa
+dentro un motore che lo cattura già a un livello più alto, in
+`AutomationRun.error`— qui non c'era un livello più alto ad
+intercettarlo). Corretto avvolgendo la chiamata nella route con un
+try/catch che restituisce un JSON pulito con `status: 502`. 15 nuovi
+test (`tests/sharepoint.test.ts`, `tests/sharepoint-sync.test.ts` —
+`fetch` mockato per l'adapter Graph, DB reale per permessi/stato/PDF).
+**Verificato anche dal vivo in modo insolitamente concreto per
+un'integrazione non completabile in questo sandbox**: `login.microsoftonline.com`
+si è rivelato raggiungibile attraverso il proxy di questo ambiente (a
+differenza di, ad esempio, `dl.min.io` per MinIO) — una regola creata
+con credenziali finte ma sintatticamente plausibili ha prodotto due
+risposte reali e diverse da Azure AD (`AADSTS900021` per un GUID tenant
+non valido, `AADSTS53003` per una Conditional Access policy su un tenant
+Microsoft reale e noto pubblicamente), entrambe propagate correttamente
+come 502 con messaggio leggibile — non solo un mock locale come per
+Teams, ma il servizio Microsoft reale, anche se senza un'app
+registration reale non si può arrivare a un upload riuscito. Verificato
+anche il percorso di permessi puro (`no_content` su una procedura DRAFT,
+`forbidden` per `viewer@demo.com`, `not_configured` senza
+integrazione), che non tocca Graph affatto. `npx tsc --noEmit` pulito,
+`npm test` 132/132. Dati di scarto rimossi (procedura, integrazione —
+la `DELETE` procedura con lo stesso 500 innocuo di MeiliSearch non
+raggiungibile già documentato altrove).
+
 **25 ago 2026 (5)**: Roadmap #6 — Playwright introdotto (ultimo pezzo
 mancante dell'item), `e2e/` con 7 test su 3 file (`login.spec.ts`,
 `search-visibility.spec.ts`, `dashboard-visibility.spec.ts`), fixture
@@ -612,11 +672,10 @@ utenti, non per difficoltà tecnica.
    proprio per poter chiamare le loro API REST native direttamente, non
    solo un incoming webhook stile Teams/Slack con il segreto nell'URL.
    Vedi Traccia 3.3 in `docs/REDESIGN-FEATURE-AUTOMATION-PLAN.md` per i
-   dettagli e la verifica dal vivo. **SharePoint resta esplicitamente
-   fuori scope**, ed è l'unico dei quattro per cui serve davvero un
-   disegno proprio: non è un consumer di webhook "ricevi un evento, fai
-   qualcosa" — è storage/collaborazione documentale, richiederebbe
-   Graph API + OAuth, una forma di integrazione del tutto diversa.
+   dettagli e la verifica dal vivo. **SharePoint fatto, 2 set 2026** —
+   vedi voce di changelog sotto per i dettagli (disegno proprio via
+   Graph API + OAuth client-credentials, non un webhook come gli altri
+   quattro). **Roadmap #5 ora completa su tutti i fronti indicati.**
 6. **Test automatici** — **avviata, 21 ago 2026**: prima infrastruttura
    Vitest (`vitest.config.mts`, `npm test`), 37 test in `tests/`, i quattro
    flussi indicati come priorità sono coperti — `tests/permissions.test.ts`
