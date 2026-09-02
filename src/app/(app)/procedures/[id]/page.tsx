@@ -12,6 +12,7 @@ import { FavoriteButton } from "@/components/procedures/favorite-button";
 import { AttachmentsPanel } from "@/components/procedures/attachments-panel";
 import { VersionHistory } from "@/components/procedures/version-history";
 import { ExportMenu } from "@/components/procedures/export-menu";
+import { SharePointSyncButton } from "@/components/procedures/sharepoint-sync-button";
 import { CommentThread } from "@/components/procedures/comment-thread";
 import { ProcedureBreadcrumb } from "@/components/procedures/procedure-breadcrumb";
 import { ProcedureViewShell } from "@/components/procedures/procedure-view-shell";
@@ -66,11 +67,16 @@ export default async function ProcedurePage({ params }: { params: { id: string }
   if (!procedure || procedure.tenantId !== tenantId) notFound();
 
   const actor = { id: userId, tenantId, globalRole: globalRole as any };
-  const [canEdit, canPublish] = await Promise.all([
+  const [canEdit, canPublish, sharePointIntegration] = await Promise.all([
     canEditProcedure(actor, procedure.departmentId),
     canPublishProcedure(actor, procedure.departmentId),
+    prisma.integration.findUnique({ where: { tenantId_type: { tenantId, type: "SHAREPOINT" } }, select: { isEnabled: true } }),
   ]);
   const canDecideCompliance = canActOnComplianceStage(actor);
+  // Same authority tier as the edit button below (rule 4) — the sync
+  // route re-checks canEditProcedure itself regardless, this just avoids
+  // showing a button that would 403 for a plain VIEWER.
+  const canSyncSharePoint = canEdit && sharePointIntegration?.isEnabled === true && procedure.status === "PUBLISHED";
 
   const pendingStep = procedure.workflowSteps.find((s) => s.status === "PENDING");
   const canDecide = pendingStep
@@ -146,6 +152,7 @@ export default async function ProcedurePage({ params }: { params: { id: string }
         <div className="flex shrink-0 items-center gap-2">
           <FavoriteButton procedureId={procedure.id} initialFavorited={procedure.favorites.length > 0} />
           {procedure.currentVersion && <ExportMenu procedureId={procedure.id} />}
+          {canSyncSharePoint && <SharePointSyncButton procedureId={procedure.id} />}
           {canEdit && (
             <Button asChild variant="outline">
               <Link href={`/procedures/${procedure.id}/edit`}>
