@@ -1028,6 +1028,7 @@ enum AutomationActionType {
   SEND_NOTIFICATION // wraps notifyEvent() — the only already-audited notification path
   CHANGE_PROCEDURE_STATUS // restricted to ARCHIVED only, see src/lib/automations/actions.ts
   SEND_WEBHOOK // generic POST to an admin-supplied URL — unblocks Teams/Jira/ServiceNow via their own native incoming webhooks, no OAuth app registration needed (3.3)
+  ESCALATE_ACK_TO_MANAGERS // groups an AckCampaign's outstanding users by their manager (fallback: procedure owner) and sends one notification per manager — only meaningful on an ACK_CAMPAIGN_AGE trigger; migrated from the old scripts/send-ack-reminders.ts DAY_14 step, not expressible as SEND_NOTIFICATION (that action sends one fixed message to a resolved recipient set, not N dynamically-grouped ones)
 }
 
 model AutomationRule {

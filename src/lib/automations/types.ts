@@ -73,9 +73,32 @@ export const sendNotificationConfigSchema = z.object({
   /// "DEPARTMENT" delegates to notifyEvent's own resolveDefaultRecipients
   /// (department-scoped, with the existing isCritical/requiresAck
   /// tenant-wide escalation already baked in) — not reimplemented here.
-  recipients: z.enum(["OWNER", "DEPARTMENT", "TENANT"]),
+  /// "ACK_OUTSTANDING" (added migrating scripts/send-ack-reminders.ts onto
+  /// this engine): the AckCampaign members who have NOT yet acknowledged —
+  /// only resolvable on an ACK_CAMPAIGN_AGE trigger, which is the only one
+  /// that hands the executor that campaign context; on any other trigger
+  /// this recipient resolves to nobody and the action is skipped (see
+  /// executeSendNotification's own comment for why that's a warn-and-skip,
+  /// not a validation error at rule-creation time — same permissiveness
+  /// SEND_WEBHOOK's authHeader already has for a field that's only
+  /// meaningful in some configurations, not all).
+  recipients: z.enum(["OWNER", "DEPARTMENT", "TENANT", "ACK_OUTSTANDING"]),
+  /// Default true (matches notifyEvent's own default: full external
+  /// fan-out). The migrated DAY_3 ack reminder was deliberately in-app
+  /// only in the old script (an early nudge, not worth a Slack/Teams
+  /// ping yet) while DAY_7 fanned out everywhere — this is what lets the
+  /// default-provisioned rules (scripts/ensure-default-automations.ts)
+  /// reproduce that distinction; any rule can use it, not just those.
+  externalChannels: z.boolean().optional(),
 });
 export type SendNotificationConfig = z.infer<typeof sendNotificationConfigSchema>;
+
+/// No fields: which campaign/outstanding users to escalate comes entirely
+/// from the ACK_CAMPAIGN_AGE trigger context that fired this rule (same
+/// reasoning as ACK_OUTSTANDING above) — there is nothing for an admin to
+/// configure here beyond enabling the rule and picking the trigger's `days`.
+export const escalateAckToManagersConfigSchema = z.object({}).strict();
+export type EscalateAckToManagersConfig = z.infer<typeof escalateAckToManagersConfigSchema>;
 
 /// v1 deliberately supports only ARCHIVED — see src/lib/automations/actions.ts
 /// for why a general "advance status" action isn't offered.
@@ -116,6 +139,8 @@ export function parseActionConfig(actionType: string, config: unknown) {
       return changeProcedureStatusConfigSchema.parse(config);
     case "SEND_WEBHOOK":
       return sendWebhookConfigSchema.parse(config);
+    case "ESCALATE_ACK_TO_MANAGERS":
+      return escalateAckToManagersConfigSchema.parse(config);
     default:
       throw new Error(`Unknown actionType "${actionType}"`);
   }
@@ -128,6 +153,6 @@ export const createAutomationRuleSchema = z.object({
   triggerType: z.enum(["PROCEDURE_STATUS_ENTERED", "REVIEW_DATE_DUE", "ACK_CAMPAIGN_AGE", "ACK_CAMPAIGN_COMPLETED", "COMMENT_ADDED"]),
   triggerConfig: z.record(z.any()),
   conditions: conditionsSchema,
-  actionType: z.enum(["SEND_NOTIFICATION", "CHANGE_PROCEDURE_STATUS", "SEND_WEBHOOK"]),
+  actionType: z.enum(["SEND_NOTIFICATION", "CHANGE_PROCEDURE_STATUS", "SEND_WEBHOOK", "ESCALATE_ACK_TO_MANAGERS"]),
   actionConfig: z.record(z.any()),
 });
