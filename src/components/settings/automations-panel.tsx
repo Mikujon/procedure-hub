@@ -28,6 +28,7 @@ const ACTION_LABEL: Record<string, string> = {
   SEND_NOTIFICATION: "Invia notifica",
   CHANGE_PROCEDURE_STATUS: "Archivia",
   SEND_WEBHOOK: "Chiama webhook",
+  ESCALATE_ACK_TO_MANAGERS: "Escalation ai manager",
 };
 
 /** Client half of /admin/automations — list + toggle + delete + entry point for CreateAutomationDialog. */
