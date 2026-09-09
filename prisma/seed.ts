@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { ensureDefaultAutomationRules } from "../src/lib/automations/defaults";
 
 const prisma = new PrismaClient();
 
@@ -257,6 +258,9 @@ async function main() {
       isPinned: true,
     },
   });
+
+  console.log("Seeding default automation rules (review reminders, ack escalation)...");
+  await ensureDefaultAutomationRules(tenant.id);
 
   console.log("Done. Login with tenant 'demo' and password 'password123':");
   console.log("  admin@demo.com        (ADMIN)");
