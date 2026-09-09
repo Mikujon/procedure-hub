@@ -131,6 +131,142 @@ prisma/seed.ts                  dati demo (dipartimenti, utenti, ruoli, una proc
 del codice/UI reali — la cronologia sotto mostra quanto spesso questo file
 si è disallineato in passato.*
 
+**9 set 2026**: Roadmap #4 — `lib/review-reminders.ts` e
+`scripts/send-ack-reminders.ts` migrati sul motore di automazioni,
+**su richiesta esplicita di procedere subito**: la voce era stata
+deliberatamente rimandata il 19 ago 2026 finché il motore non avesse
+girato "un ciclo di produzione senza incidenti" — un criterio che questo
+sandbox, senza traffico di produzione reale, non può mai soddisfare da
+solo; a chi ha chiesto come procedere sono state offerte alternative
+(aspettare credenziali reali per gli item #1-3, un audit più ampio,
+altro) e la scelta di procedere comunque con #4 è stata dell'utente, non
+un giudizio autonomo di Claude che ha sovrascritto il rimando.
+
+**Il problema reale del "migrare"**: questi due percorsi non erano mai
+stati configurabili da admin — ogni tenant li otteneva automaticamente,
+zero `AutomationRule` da creare. Spegnere il codice vecchio e dire
+"createvi la regola equivalente" avrebbe fatto sparire in silenzio i
+promemoria di revisione e l'escalation Read & Acknowledge per ogni
+tenant che non lo fa proattivamente — esattamente il rischio di
+compliance per cui il rimando esisteva. Soluzione: nuovo
+`lib/automations/defaults.ts` (`ensureDefaultAutomationRules`) crea
+quattro regole predefinite per tenant se non esiste già l'equivalente
+(stesso trigger/azione, e per le tre `ACK_CAMPAIGN_AGE` anche stesso
+`days` — non un nome, un admin che rinomina una regola non deve farne
+comparire una seconda al prossimo giro) — chiamato da
+`scripts/ensure-default-automations.ts` (backfill, idempotente, non
+c'è un flusso self-service di creazione tenant in questo codebase da
+agganciare automaticamente) e ora anche da `prisma/seed.ts`, così un
+ambiente nuovo parte già corretto. Il comportamento pre-esistente resta
+identico zero-configurazione, ma ora è una vera `AutomationRule`
+visibile/disattivabile/modificabile in `/admin/automations` — mai stato
+possibile prima.
+
+**Le quattro regole**: `REVIEW_DATE_DUE` → `SEND_NOTIFICATION`
+(destinatario `OWNER`, replica `sendReviewReminders()`); tre
+`ACK_CAMPAIGN_AGE` a 3/7/14 giorni. A 3 e 7 giorni →
+`SEND_NOTIFICATION` con un destinatario nuovo, `ACK_OUTSTANDING` (solo
+chi non ha ancora confermato — prima irraggiungibile dall'azione
+generica, che sapeva solo risolvere proprietario/dipartimento/tenant) —
+7 giorni con fan-out esterno (Slack/Google Chat/Teams), 3 giorni solo
+in-app, stessa distinzione dello script originale, resa possibile da un
+nuovo `externalChannels` opzionale su `SendNotificationConfig` (prima
+sempre `true`, senza modo di scegliere). A 14 giorni → nuovo
+`AutomationActionType.ESCALATE_ACK_TO_MANAGERS` (nuova migration): non
+esprimibile come `SEND_NOTIFICATION`, che risolve *un* insieme di
+destinatari e manda *un* messaggio — questo raggruppa chi non ha ancora
+confermato per il proprio manager (fallback: proprietario della
+procedura) e manda un messaggio distinto a ciascun manager, una forma
+di azione diversa, non solo un destinatario diverso. Permesso dalla
+regola architetturale 7 (che blocca solo un'azione generica "avanza/
+pubblica stato", non nuove azioni di notifica).
+
+**Bug reale trovato ricostruendo `runAckCampaignAgeRule` per
+agganciarci questo lavoro, non introdotto da esso**: il suo `fireKey`
+era `String(days)` — una stringa costante per ogni esecuzione della
+stessa regola, indipendente da *quale* campagna. Con
+`@@unique([ruleId, entityId, fireKey])` e `entityId` = id procedura,
+questo significava che una regola poteva scattare **una sola volta per
+procedura, per sempre**: una volta che una prima `AckCampaign` per la
+procedura X avesse fatto scattare la regola "14 giorni", **nessuna**
+`AckCampaign` futura per quella stessa procedura (es. dopo una
+ripubblicazione che richiede una nuova conferma) avrebbe mai potuto
+farla scattare di nuovo. Corretto: `fireKey` ed `entityId` ora sono
+l'id della campagna stessa, non la procedura — ogni campagna ha il
+proprio slot di dedup, una nuova campagna per la stessa procedura parte
+pulita. Toccata anche una lacuna adiacente: `runAckCampaignAgeRule` non
+calcolava affatto chi fosse ancora "outstanding" (mancante la
+conferma) — lo fa ora, escludendo chi ha già confermato, e salta del
+tutto lo scatto se non resta nessuno (difensivo: `maybeCompleteCampaign`
+dovrebbe già aver chiuso quella campagna).
+
+**Nuovo**: placeholder `{{procedureTitle}}` in titolo/messaggio di
+`SEND_NOTIFICATION` — sostituzione di stringa, non un motore di
+template. Prima di questo, ogni regola `SEND_NOTIFICATION` mandava un
+titolo fisso identico per ogni procedura che la faceva scattare, bene
+per una regola-annuncio isolata (es. "Avvisa il DPO quando serve
+approvazione compliance", un solo evento, l'utente apre e vede i
+dettagli) ma non per un promemoria ricorrente su *molte* procedure
+diverse, dove titoli indistinguibili nell'elenco notifiche vanificano
+lo scopo — esattamente il caso dei promemoria di revisione/ACK appena
+migrati, che prima avevano un titolo dinamico costruito a mano
+(`"${title}" è in scadenza...`) e lo avrebbero perso migrando
+sull'azione generica senza questo. `AckReminder` (stage DAY_3/7/14) non
+viene più scritto da questo percorso — `AutomationRun` (già visibile
+nello storico esecuzioni di `/admin/automations`, Traccia 3.1) è ora
+la fonte di verità su cosa è scattato quando; `AckReminderStage` con
+solo `INITIAL` resta in uso (scritto da `lib/ack.ts`, non toccato).
+
+`vercel.json`: rimossa la voce cron dedicata (`/api/cron/review-reminders`,
+giornaliera) — `/api/cron/automations` (oraria, già esistente) ora è
+l'unico cron time-based, comprese le quattro regole predefinite.
+`scripts/dev-cron.ts` semplificato di conseguenza.
+
+21 nuovi test (`tests/automations-ack-migration.test.ts`): il fix del
+bug `fireKey` (due campagne separate sulla stessa procedura scattano
+entrambe in modo indipendente), skip quando nessuno è più outstanding,
+risoluzione `ACK_OUTSTANDING` (incluso lo skip silenzioso — nessuna
+eccezione, nessun destinatario — se una regola viene configurata per
+sbaglio su un trigger diverso da `ACK_CAMPAIGN_AGE`), il placeholder
+`{{procedureTitle}}`, `ESCALATE_ACK_TO_MANAGERS` (raggruppamento per
+manager e fallback a proprietario), e `ensureDefaultAutomationRules`
+(crea le quattro al primo giro, no-op al secondo, non duplica una
+regola equivalente già esistente con nome diverso, distingue le tre
+regole `ACK_CAMPAIGN_AGE` per `days` e non solo per trigger/azione).
+Una particolarità trovata scrivendo questi test, non nel codice sotto
+test: `runTimeBasedAutomations()` scansiona ogni regola abilitata
+dell'intero tenant, quindi condividere un tenant fisso tra più test che
+creano ciascuno una propria regola "days=3" fa scattare *tutte* quelle
+regole sulla stessa campagna, moltiplicando le notifiche attese — non
+un bug del motore (un admin che crea davvero due regole identiche
+vedrebbe lo stesso comportamento, corretto), ma un problema di
+isolamento tra test, risolto dando a ogni test in questo file un
+proprio tenant di scarto invece di condividerne uno con `beforeAll`.
+
+**Verificato dal vivo** oltre ai test, contro il tenant demo reale:
+`scripts/ensure-default-automations.ts` ha creato le quattro regole
+(verificato idempotente su un secondo giro, e su un terzo giro dentro
+`npm run db:seed` risemminato), poi una procedura di scarto pubblicata
+con `nextReviewDate` nel passato più una `AckCampaign` di scarto aperta
+20 giorni fa (destinatari `viewer@demo.com` — con manager impostato
+temporaneamente su `editor@demo.com` — ed `editor@demo.com`, senza
+manager) sottoposte a un vero `GET /api/cron/automations`: tutte e
+quattro le regole hanno scattato con `status: SUCCESS`, le notifiche
+reali create hanno il titolo templato correttamente
+(`"..." è in scadenza di revisione`), i promemoria a 3/7 giorni sono
+arrivati a entrambi gli outstanding, e l'escalation a 14 giorni ha
+prodotto esattamente due messaggi distinti — uno a `editor@demo.com`
+("Vittorio Viewer" nel corpo, il suo riporto) e uno ad `admin@demo.com`
+(proprietario della procedura, fallback per `editor@demo.com` che non
+ha un manager) — non uno generico a tutti. Un secondo giro dello stesso
+endpoint ha rieseguito le quattro regole senza creare notifiche
+duplicate (dedup reale via `AutomationRun`, non solo nei test). `npx
+tsc --noEmit` pulito, `npm test` 142/142. Dati di scarto rimossi
+(procedura, campagna, notifiche generate durante la verifica,
+`managerId` temporaneo ripristinato a `null`) — le quattro regole
+predefinite sul tenant demo restano, per scelta: non sono dati di
+scarto, sono il comportamento di produzione atteso da qui in avanti.
+
 **2 set 2026**: Roadmap #5 — integrazione SharePoint, l'ultimo dei
 cinque provider rimasti e l'unico per cui serviva davvero un disegno
 proprio (non un canale di notifica come Slack/Teams/Google Chat, non
@@ -600,11 +736,12 @@ in-app + Slack/Google Chat (modalità webhook) · ricerca full-text con filtri
 presigned URL S3-compatible, download/delete con stessa RBAC della procedura)
 · sync automatico indice di ricerca (pubblicazione, archiviazione ed
 eliminazione tengono MeiliSearch coerente entro la stessa richiesta; backfill
-con `scripts/reindex.ts`) · cron reminder di revisione periodica
-(`GET /api/cron/review-reminders`, `vercel.json`, idempotente su
-`Procedure.reviewReminderSentAt`; equivalente manuale
-`scripts/send-review-reminders.ts`) · rate limiting su login/AI/quick-confirm
-(`lib/rate-limit.ts`, fail-open su Redis irraggiungibile).
+con `scripts/reindex.ts`) · promemoria di revisione periodica ed escalation
+Read & Acknowledge, entrambi sul motore di automazioni come regole
+predefinite per-tenant (`GET /api/cron/automations`, `vercel.json`,
+`lib/automations/defaults.ts` — dettagli in Roadmap #4, 9 set 2026) · rate
+limiting su login/AI/quick-confirm (`lib/rate-limit.ts`, fail-open su Redis
+irraggiungibile).
 
 Oltre questo, dal lavoro seguito in `New plan/` (vedi `New plan/00-INDEX.md`):
 motore a blocchi (editor stile Notion, `src/components/blocks/`, sostituisce
@@ -650,11 +787,15 @@ utenti, non per difficoltà tecnica.
    lo spazio DM e posta il messaggio è un TODO esplicito in `gchat.ts` —
    verificarne il comportamento contro un Workspace reale prima di
    completarla (solo la modalità webhook è end-to-end oggi).
-4. **Migrare review-reminders/ack-escalation sul motore di automazioni**:
-   deliberatamente non fatto il 19 ago 2026 quando è stato introdotto il
-   motore — `lib/review-reminders.ts` e `lib/ack.ts` restano il percorso
-   reale finché il motore nuovo non ha girato un ciclo di produzione senza
-   incidenti (conseguenze di compliance reali se si rompono).
+4. **Migrare review-reminders/ack-escalation sul motore di automazioni —
+   fatta, 9 set 2026**, su richiesta esplicita di procedere subito
+   (deliberatamente rimandata il 19 ago 2026 in attesa di un ciclo di
+   produzione senza incidenti — impossibile da verificare davvero in
+   questo sandbox, che non ha traffico di produzione reale: la decisione
+   di procedere comunque è stata dell'utente, non un giudizio autonomo di
+   Claude). Vedi la voce di changelog sotto per i dettagli — `lib/review-reminders.ts`
+   e `scripts/send-ack-reminders.ts` sono stati rimossi, non lasciati
+   come fallback.
 5. **Teams / SharePoint / Jira / Freshdesk / ServiceNow**: `Integration.type`
    li prevede già nello schema. **Microsoft Teams fatto, 25 ago 2026**
    (`lib/integrations/teams.ts`, modalità webhook — vedi voce di changelog
