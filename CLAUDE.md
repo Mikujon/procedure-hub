@@ -131,6 +131,81 @@ prisma/seed.ts                  dati demo (dipartimenti, utenti, ruoli, una proc
 del codice/UI reali — la cronologia sotto mostra quanto spesso questo file
 si è disallineato in passato.*
 
+**9 set 2026 (2)**: pagina admin `/admin/integrations` — prima non
+esisteva alcuna UI reale per configurare Slack/Google Chat/Microsoft
+Teams/SharePoint, solo `GET/POST /api/admin/integrations` chiamabile a
+mano; `/admin/settings` prometteva un link "Integrazioni & notifiche" che
+in realtà puntava alla dashboard KPI (`/admin`, nessuna sezione
+integrazioni) — un buco già segnalato nel changelog del 25 ago 2026 ma
+mai corretto perché fuori scope per quell'item. Emerso di nuovo in questa
+sessione spiegando all'utente perché gli item #1-3 della roadmap restano
+bloccati: si aspettava, ragionevolmente, che l'admin della propria
+azienda potesse inserire le credenziali reali (webhook Slack, service
+account Google, ecc.) da una sezione "Integrazioni" dell'app — non
+un'API grezza.
+
+Nuova pagina server-gated `ADMIN` (`src/app/(app)/admin/integrations/page.tsx`)
++ client component `src/components/settings/integrations-panel.tsx` con
+una scheda per ciascuno dei quattro tipi che hanno davvero un adapter
+dedicato (Slack, Google Chat, Microsoft Teams, SharePoint — vedi voci di
+changelog precedenti per ciascuno). **Deliberatamente esclusi**: Jira/
+ServiceNow/Freshdesk (si collegano già tramite una regola `SEND_WEBHOOK`
+in `/admin/automations`, non un `Integration` di tipo dedicato — vedi
+Traccia 3.3, 21/25 ago 2026) ed Entra ID/SSO (variabili d'ambiente a
+livello di deployment lette da `lib/auth.ts`, non una riga `Integration`
+per tenant) — entrambi spiegati direttamente nella pagina invece di
+comparire come schede vuote e fuorvianti.
+
+**Due bug reali corretti nella route esistente**, non solo aggiunta di
+UI sopra: `POST /api/admin/integrations` faceva un replace integrale di
+`config` invece di un merge — dato che il form pre-compila i campi
+segreto con il placeholder mascherato restituito dalla `GET` (non ha mai
+il valore vero da mostrare), salvare senza toccare un campo segreto
+l'avrebbe sovrascritto con la stringa mascherata letterale, cancellando
+il token reale; e la stessa route restituiva `config` grezzo, non
+mascherato, nella risposta del salvataggio — la `GET` mascherava, la
+`POST` no. Nuovo `src/lib/integrations/sanitize.ts`:
+`sanitizeIntegrationConfig()` (maschera ogni chiave che matcha
+`token|secret|key|password`, case-insensitive, usato ora sia da `GET`
+sia da `POST`) e `mergeIntegrationConfig()` (legge la riga esistente,
+applica solo i campi genuinamente diversi, tratta un valore in arrivo
+uguale al placeholder come "nessuna modifica, mantieni quello
+salvato" — una stringa vuota esplicita resta invece una cancellazione
+deliberata, distinta dal placeholder). Il mascheramento avviene lato
+server component prima di passare i dati al client component: qualunque
+prop passata da un Server Component a un Client Component finisce
+serializzata nel payload RSC della pagina inviato al browser, quindi
+mascherare solo nella resa visiva del client non sarebbe bastato.
+
+Corretti anche i due link rotti su `/admin/settings` (statistica
+"Integrazioni attive" e riquadro "Integrazioni & notifiche", entrambi
+puntavano a `/admin`) verso `/admin/integrations`. Nessuna nuova voce in
+sidebar/command palette — stesso pattern "hub and spoke" già usato per
+`/admin/automations` (raggiungibile solo da `/admin/settings`, non un
+livello di navigazione a sé).
+
+8 nuovi test (`tests/integrations-sanitize.test.ts`): mascheramento
+case-insensitive, config nulla/assente, overwrite di un campo
+genuinamente nuovo, preservazione del segreto quando il valore in arrivo
+è il placeholder, cancellazione esplicita con stringa vuota,
+preservazione dei campi non toccati da un cambio di `mode` (es. bot →
+webhook non cancella i campi del bot), primo salvataggio senza config
+preesistente, e un round-trip completo che simula il flusso reale
+("admin salva senza modificare alcun segreto" → sanitize → invariato nel
+form → merge → risultato identico all'originale). **Verificato anche dal
+vivo** contro Postgres reale via `curl` autenticato come
+`admin@demo.com`: risposta di salvataggio con segreti mascherati,
+un secondo salvataggio con i placeholder mascherati preserva esattamente
+il segreto reale già salvato, un cambio di modalità Slack bot→webhook
+preserva in storage i campi della modalità bot ormai inutilizzata invece
+di cancellarli. Redirect `307` confermato per un non-admin
+(`viewer@demo.com`) verso `/dashboard`. Screenshot Playwright della
+pagina reale (login vero, navigazione, attesa del testo "SharePoint")
+conferma le quattro schede rese correttamente nell'identità visiva
+Control Room, nessuna rottura di layout. `npx tsc --noEmit` pulito,
+`npm test` 150/150. Dati di scarto (una riga `Integration` di test)
+rimossi, confermato via query di conteggio successiva.
+
 **9 set 2026**: Roadmap #4 — `lib/review-reminders.ts` e
 `scripts/send-ack-reminders.ts` migrati sul motore di automazioni,
 **su richiesta esplicita di procedere subito**: la voce era stata
