@@ -131,6 +131,56 @@ prisma/seed.ts                  dati demo (dipartimenti, utenti, ruoli, una proc
 del codice/UI reali — la cronologia sotto mostra quanto spesso questo file
 si è disallineato in passato.*
 
+**15 set 2026**: `/admin/integrations` — chiuso un gap reale nel
+mascheramento segreti trovato riguardando `sanitize.ts` appena spedito
+(voce del 9 set 2026 sotto), con gli item #1-3 della roadmap ancora
+bloccati sulle stesse credenziali esterne reali di sempre: nessun nuovo
+lavoro possibile lì, quindi rivisto invece quello appena costruito.
+`sanitizeIntegrationConfig()` maschera solo le chiavi che matchano
+`token|secret|key|password` per nome — `webhookUrl` (Slack/Google
+Chat/Teams: chi lo possiede può pubblicare nel canale, nessun'altra
+autenticazione richiesta) e `serviceAccountJson` (Google Chat: una
+service account key Workspace intera, chiave privata RSA inclusa) non
+matchano quel pattern per nome e finivano quindi serializzati in chiaro
+nel payload RSC della pagina **e** mostrati in campi di testo semplice
+(non `type="password"`) nel form appena costruito. `webhookUrl` era
+un'incoerenza già segnalata (changelog 25 ago 2026 (2)) ma
+esplicitamente fuori scope per quel lavoro (header `Authorization` di
+`SEND_WEBHOOK`); `serviceAccountJson` non era mai stato documentato.
+Entrambi ora squarely in scope, essendo la pagina che li mostra.
+
+Corretto con un elenco esplicito di nomi di campo (`EXPLICIT_SECRET_FIELDS`,
+non un regex più largo — `siteId`/`drivePath`/`googleWorkspaceDomain` non
+sono segreti e un pattern tipo "webhook" rischierebbe di beccare un futuro
+campo non segreto con nome simile), usato in `isSecretField()` assieme al
+pattern esistente. `mergeIntegrationConfig()` non ha richiesto modifiche:
+tratta già qualunque campo il cui valore in arrivo sia il placeholder
+mascherato come "invariato", indipendentemente dal nome — funziona per i
+due campi nuovi automaticamente. Anche i tre input `webhookUrl` del
+pannello (Slack, Google Chat, Teams) passati a `type="password"`, per
+coerenza con `botToken`/`signingSecret`/`clientSecret` già così (evita
+anche l'esposizione a spalla/screen-share mentre l'admin digita un nuovo
+valore — `serviceAccountJson` resta una `<textarea>`, che non ha un
+equivalente nativo di `type="password"`, stessa limitazione HTML di
+qualunque campo multilinea).
+
+5 nuovi test in `tests/integrations-sanitize.test.ts` (13 totali):
+mascheramento dei due campi nuovi, campi genuinamente non segreti
+(`siteId`/`drivePath`/`googleWorkspaceDomain`/`azureTenantId`/`clientId`)
+che restano visibili, round-trip completo sanitize→invariato nel
+form→merge per entrambi. **Verificato anche dal vivo** contro Postgres
+reale: `POST` con un vero webhook Slack e un vero JSON service account
+di scarto → risposta di salvataggio mascherata su entrambi; query diretta
+al DB conferma i valori reali salvati intatti (non corrotti dal
+mascheramento); `GET` successivo mascherato; un secondo salvataggio con
+i placeholder preserva esattamente il valore reale; HTML della pagina
+`/admin/integrations` resa dal vivo ispezionato con `grep` — né il
+webhook reale né la chiave privata reale compaiono in nessun punto del
+payload, solo il placeholder. Screenshot Playwright conferma i campi
+webhook ora `type="password"` nel form reso. `npx tsc --noEmit` pulito,
+`npm test` 153/153. Dati di scarto (le due righe `Integration` di test)
+rimossi, confermato via query diretta.
+
 **9 set 2026 (2)**: pagina admin `/admin/integrations` — prima non
 esisteva alcuna UI reale per configurare Slack/Google Chat/Microsoft
 Teams/SharePoint, solo `GET/POST /api/admin/integrations` chiamabile a
