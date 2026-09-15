@@ -147,6 +147,7 @@ function SlackCard({ initial }: { initial?: IntegrationRow }) {
         <div>
           <label className={labelClass}>Incoming Webhook URL</label>
           <input
+            type="password"
             value={webhookUrl}
             onChange={(e) => setWebhookUrl(e.target.value)}
             placeholder="https://hooks.slack.com/services/..."
@@ -213,6 +214,7 @@ function GoogleChatCard({ initial }: { initial?: IntegrationRow }) {
         <div>
           <label className={labelClass}>Webhook URL</label>
           <input
+            type="password"
             value={webhookUrl}
             onChange={(e) => setWebhookUrl(e.target.value)}
             placeholder="https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=..."
@@ -277,6 +279,7 @@ function TeamsCard({ initial }: { initial?: IntegrationRow }) {
       <div>
         <label className={labelClass}>URL webhook Workflows</label>
         <input
+          type="password"
           value={webhookUrl}
           onChange={(e) => setWebhookUrl(e.target.value)}
           placeholder="https://.../workflows/.../triggers/manual/paths/invoke?..."

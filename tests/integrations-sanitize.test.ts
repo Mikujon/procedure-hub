@@ -16,19 +16,56 @@ import { sanitizeIntegrationConfig, mergeIntegrationConfig, MASKED_SECRET_VALUE 
 describe("sanitizeIntegrationConfig", () => {
   it("masks every key matching token/secret/key/password, case-insensitively", () => {
     const result = sanitizeIntegrationConfig({
-      webhookUrl: "https://example.com/hook",
       botToken: "xoxb-real-token",
       signingSecret: "shh",
       clientSecret: "also-shh",
       apiKey: "shh-too",
       PASSWORD: "shh-uppercase",
     });
-    expect(result.webhookUrl).toBe("https://example.com/hook"); // not secret-shaped by name
     expect(result.botToken).toBe(MASKED_SECRET_VALUE);
     expect(result.signingSecret).toBe(MASKED_SECRET_VALUE);
     expect(result.clientSecret).toBe(MASKED_SECRET_VALUE);
     expect(result.apiKey).toBe(MASKED_SECRET_VALUE);
     expect(result.PASSWORD).toBe(MASKED_SECRET_VALUE);
+  });
+
+  /**
+   * Real bug found building /admin/integrations, fixed in the same session:
+   * neither `webhookUrl` (a Slack/Google Chat/Teams incoming-webhook URL —
+   * whoever holds it can post to that channel, no further auth needed) nor
+   * `serviceAccountJson` (a full Google Workspace service-account key,
+   * private RSA key included) matches token/secret/key/password by name,
+   * so both were serialized to the browser in cleartext and shown in plain
+   * (non-password) form fields — `webhookUrl` was a previously-flagged,
+   * explicitly out-of-scope inconsistency (CLAUDE.md, 25 ago 2026 (2));
+   * `serviceAccountJson` was an undocumented instance of the same gap.
+   */
+  it("also masks webhookUrl and serviceAccountJson, which the name pattern alone misses", () => {
+    const result = sanitizeIntegrationConfig({
+      webhookUrl: "https://hooks.slack.com/services/real/secret/path",
+      serviceAccountJson: '{"private_key": "-----BEGIN PRIVATE KEY-----..."}',
+    });
+    expect(result.webhookUrl).toBe(MASKED_SECRET_VALUE);
+    expect(result.serviceAccountJson).toBe(MASKED_SECRET_VALUE);
+  });
+
+  it("leaves genuinely non-secret fields visible", () => {
+    const result = sanitizeIntegrationConfig({
+      mode: "webhook",
+      siteId: "contoso.sharepoint.com,site-collection-id,web-id",
+      drivePath: "Procedure Hub/Legal",
+      googleWorkspaceDomain: "acme.com",
+      azureTenantId: "00000000-0000-0000-0000-000000000000",
+      clientId: "not-a-secret-by-itself",
+    });
+    expect(result).toEqual({
+      mode: "webhook",
+      siteId: "contoso.sharepoint.com,site-collection-id,web-id",
+      drivePath: "Procedure Hub/Legal",
+      googleWorkspaceDomain: "acme.com",
+      azureTenantId: "00000000-0000-0000-0000-000000000000",
+      clientId: "not-a-secret-by-itself",
+    });
   });
 
   it("handles a null/undefined config without throwing", () => {
@@ -71,6 +108,17 @@ describe("mergeIntegrationConfig", () => {
     const stored = { mode: "bot", botToken: "xoxb-real-secret", signingSecret: "shh" };
     const shownToAdmin = sanitizeIntegrationConfig(stored);
     // Admin changes nothing, submits the form exactly as pre-filled.
+    const merged = mergeIntegrationConfig(stored, shownToAdmin);
+    expect(merged).toEqual(stored);
+  });
+
+  it("round-trips webhookUrl/serviceAccountJson the same way (the fields the name pattern alone misses)", () => {
+    const stored = {
+      mode: "webhook",
+      webhookUrl: "https://hooks.slack.com/services/real/secret/path",
+      serviceAccountJson: '{"private_key": "-----BEGIN PRIVATE KEY-----..."}',
+    };
+    const shownToAdmin = sanitizeIntegrationConfig(stored);
     const merged = mergeIntegrationConfig(stored, shownToAdmin);
     expect(merged).toEqual(stored);
   });
