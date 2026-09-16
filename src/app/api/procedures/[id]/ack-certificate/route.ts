@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { logProcedureExport } from "@/lib/audit";
 
 const CHANNEL_LABEL: Record<string, string> = {
   IN_APP: "In-app",
@@ -103,6 +104,17 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   }
 
   const bytes = await pdf.save();
+
+  // Same gap as GET .../export (lib/audit.ts) — arguably more audit-worthy
+  // here than the plain content export, since this PDF *is* the Read &
+  // Acknowledge compliance certificate.
+  await logProcedureExport({
+    tenantId,
+    actorId: userId,
+    procedureId: procedure.id,
+    metadata: { format: "pdf", kind: "ack-certificate", campaignId: campaign.id, versionNumber: campaign.versionNumber },
+  });
+
   return new NextResponse(Buffer.from(bytes), {
     headers: {
       "Content-Type": "application/pdf",

@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canViewProcedure } from "@/lib/permissions";
+import { logProcedureExport } from "@/lib/audit";
 import { extractExportBlocks } from "@/lib/export/content-blocks";
 import { generateProcedurePdf } from "@/lib/export/pdf";
 import { generateProcedureDocx } from "@/lib/export/docx";
@@ -95,6 +96,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 
   const filename = `${procedure.code}-${slugify(procedure.title)}-v${procedure.currentVersion.versionNumber}.${format}`;
+
+  await logProcedureExport({ tenantId, actorId: userId, procedureId: procedure.id, metadata: { format, fileName: filename } });
 
   return new NextResponse(Buffer.from(body), {
     headers: {

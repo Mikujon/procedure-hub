@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { canEditProcedure, type ActingUser } from "@/lib/permissions";
+import { logProcedureExport } from "@/lib/audit";
 import { extractExportBlocks } from "@/lib/export/content-blocks";
 import { generateProcedurePdf } from "@/lib/export/pdf";
 import { uploadFileToSharePoint, type SharePointUploadConfig } from "@/lib/integrations/sharepoint";
@@ -77,16 +78,11 @@ export async function syncProcedureToSharePoint(actor: ActingUser, procedureId: 
   const fileName = `${procedure.code}-${slugify(procedure.title)}-v${procedure.currentVersion.versionNumber}.pdf`;
   const { webUrl } = await uploadFileToSharePoint(integration.config, fileName, "application/pdf", Buffer.from(pdfBytes));
 
-  await prisma.auditLog.create({
-    data: {
-      tenantId: actor.tenantId,
-      actorId: actor.id,
-      action: "EXPORT",
-      entityType: "Procedure",
-      entityId: procedure.id,
-      procedureId: procedure.id,
-      metadata: { destination: "SharePoint", fileName, webUrl },
-    },
+  await logProcedureExport({
+    tenantId: actor.tenantId,
+    actorId: actor.id,
+    procedureId: procedure.id,
+    metadata: { destination: "SharePoint", fileName, webUrl },
   });
 
   return { status: "ok", webUrl };
