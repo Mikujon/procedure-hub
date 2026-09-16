@@ -131,6 +131,42 @@ prisma/seed.ts                  dati demo (dipartimenti, utenti, ruoli, una proc
 del codice/UI reali — la cronologia sotto mostra quanto spesso questo file
 si è disallineato in passato.*
 
+**16 set 2026**: chiuso un secondo gap reale, di nuovo con gli item #1-3
+della roadmap ancora bloccati sulle stesse credenziali esterne di
+sempre — stavolta l'audit trail sull'export di una procedura, segnalato
+ma lasciato fuori scope quando SharePoint sync è stato costruito (voce
+del 2 set 2026: "nemmeno il bottone Esporta manuale la scrive, una
+lacuna pre-esistente notata ma non corretta qui, fuori scope").
+`syncProcedureToSharePoint` scriveva già un `AuditLog` con
+`action: EXPORT` per la propria copia PDF, ma **due** download manuali
+dello stesso genere di contenuto non lo facevano affatto:
+`GET /api/procedures/[id]/export` (download diretto PDF/DOCX/XLSX) e
+`GET /api/procedures/[id]/ack-certificate` (il certificato di
+conformità Read & Acknowledge — quest'ultimo mai segnalato prima,
+trovato riguardando l'area). La regola architetturale 2 ("ogni azione
+che cambia stato scrive un AuditLog") non li copre in senso stretto —
+un download non cambia nulla — ma tracciare chi ha scaricato cosa è
+esattamente ciò che un audit trail ISO/GDPR/SOC2 richiede, e il
+certificato ACK in particolare è già di per sé un documento di
+conformità.
+
+Estratto `src/lib/audit.ts` (`logProcedureExport()`) invece di
+duplicare per la terza volta lo stesso `prisma.auditLog.create()` —
+usato ora da tutti e tre i punti (le due route più
+`sharepoint-sync.ts`, che prima lo scriveva inline). 2 nuovi test
+(`tests/audit.test.ts`, 155 totali): riga scritta con tenant/attore/
+procedura corretti, chiamate multiple indipendenti non si sovrascrivono
+a vicenda. **Verificato anche dal vivo** contro Postgres reale e il
+tenant demo: procedura pubblicata reale (`LEG-PRO-001`), conteggio
+`AuditLog` a zero prima, `GET .../export?format=pdf` reale via `curl`
+autenticato come `admin@demo.com` → una riga `EXPORT` con `fileName`
+corretto nei metadata; una `AckCampaign` di scarto completata inserita
+direttamente (bypassando il flusso reale di conferma, non necessario
+per isolare questa verifica) → `GET .../ack-certificate` reale → una
+seconda riga distinta con `kind: "ack-certificate"` e il `campaignId`
+nei metadata. `npx tsc --noEmit` pulito, `npm test` 155/155. Dati di
+scarto (le due righe `AuditLog`, la `AckCampaign`) rimossi.
+
 **15 set 2026**: `/admin/integrations` — chiuso un gap reale nel
 mascheramento segreti trovato riguardando `sanitize.ts` appena spedito
 (voce del 9 set 2026 sotto), con gli item #1-3 della roadmap ancora
