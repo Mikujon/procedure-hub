@@ -131,6 +131,38 @@ prisma/seed.ts                  dati demo (dipartimenti, utenti, ruoli, una proc
 del codice/UI reali — la cronologia sotto mostra quanto spesso questo file
 si è disallineato in passato.*
 
+**17 set 2026 (2)**: l'audit di governance sotto (voce precedente,
+stesso giorno) è stato **rifatto** appena scoperto che il kit aveva
+pubblicato nel frattempo `v1.4.0` — che aggiunge `AI_PROJECT_AUDIT.md`,
+il file dedicato ad auditare uno strumento **già esistente** (diverso da
+`AI_INTAKE_ASSESSMENT.md`, usato ieri, pensato per un progetto nuovo).
+Le prove raccolte restano identiche (nessun codice è cambiato tra i due
+tentativi, e il checklist a 42 punti stesso non è cambiato tra
+`v1.3.1`/`v1.4.0` del kit — solo il processo di audit) — quello che
+cambia è l'esito formale: `AI_PROJECT_AUDIT.md` §6 impone di **fermarsi
+ed escalare al Consiglio di Governance** quando un gate item T3 fallisce
+(approvazione security, penetration test, policy di retention, o qui
+la valutazione prompt-injection), *prima* di poter marcare un progetto
+"Parziale" — il primo tentativo aveva scritto "Partial — remediation
+required" senza applicare questa regola, perché non aveva ancora letto
+il file giusto. Con tre gate item su tre falliti (nessuna valutazione
+prompt-injection scritta per `/ask`, nessun penetration test, nessuna
+approvazione security registrata), l'esito corretto è **"Non conforme —
+escalation al Consiglio"**, indirizzata di fatto al solo Chair (l'unico
+seat oggi nominato in `GOVERNANCE.md`, che fa da default per il seat
+Security ancora `TBD`).
+
+Nuovi file al posto del precedente `docs/AI-GOVERNANCE-AUDIT.md` (ora
+rinominato `docs/AI-GOVERNANCE-AUDIT-EVIDENCE.md`, mantenuto come
+evidenza dettagliata riga per riga): `AUDIT_2026-09-17.md` (il documento
+ufficiale, nel formato a template richiesto da `AI_PROJECT_AUDIT.md`
+§3 — data, tier, esito, priorità) e `REMEDIATION_2026-09-17.md` (§5 del
+file istruzioni: un secondo file separato, solo i punti in Fail come
+checklist spuntabile, con i due punti realmente bloccanti — owner
+mancante e la tripla escalation — marcati esplicitamente come "non
+risolvibile da codice", per non lasciar credere che un assistente AI
+possa chiuderli da solo). `PROJECT.md` aggiornato di conseguenza.
+
 **17 set 2026**: primo audit di governance AI di Procedure Hub contro
 `wearefiber/ai-governance-kit` (v1.3.1) — non una feature del prodotto,
 ma classificazione e audit del progetto stesso su richiesta esplicita

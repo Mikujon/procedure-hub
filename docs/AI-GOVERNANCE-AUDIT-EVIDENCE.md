@@ -1,14 +1,29 @@
-# Audit di governance AI — Procedure Hub
+# Evidenza dettagliata dell'audit — Procedure Hub
 
-*Primo audit, 17 set 2026. Eseguito da Claude Code contro
-`reference/AI_Development_Standard.docx` §7 (checklist a 42 punti),
-`wearefiber/ai-governance-kit` versione `v1.3.1`. Tier: **T3 — Critico/
-Regolamentato** (vedi `PROJECT.md` per il ragionamento di classificazione).*
+*Nota di provenienza (aggiunta il 17 set 2026, stesso giorno): questo
+file era originariamente `docs/AI-GOVERNANCE-AUDIT.md`, l'audit
+completo. Rifacendolo contro `wearefiber/ai-governance-kit v1.4.0` è
+emerso che la versione precedente (`v1.3.1`) non aveva ancora
+`AI_PROJECT_AUDIT.md` — il file dedicato ad auditare uno strumento
+**già esistente** (con template ufficiale, distribuzione per tier, e
+soprattutto una regola di escalation per i gate item T3 falliti che
+la stesura precedente non ha applicato). Il documento ufficiale
+dell'audit è ora `AUDIT_2026-09-17.md` alla radice del repo, con il
+piano di remediation in `REMEDIATION_2026-09-17.md` — questo file
+resta come **evidenza dettagliata a supporto**, linkato da lì: le
+prove raccolte qui restano valide (nessuna riga di codice è cambiata),
+solo la struttura del documento di audit è stata corretta.
 
-*Ogni riga qui sotto è verificata contro il codice/repo reale — non
+Eseguito da Claude Code contro `reference/AI_Development_Standard.docx`
+§7 (checklist a 42 punti, versione 1.0 del documento — invariata tra
+`v1.3.1` e `v1.4.0` del kit, che ha toccato solo il *processo* di audit,
+non il checklist stesso). Tier: **T3 — Critico/Regolamentato** (vedi
+`PROJECT.md` per il ragionamento di classificazione).
+
+Ogni riga qui sotto è verificata contro il codice/repo reale — non
 assunta. Dove non verificabile da questa sandbox (deployment, vault
 aziendale, hub condiviso che non esiste ancora), è segnato `N/A` con il
-motivo, non `Pass` per default.*
+motivo, non `Pass` per default.
 
 **Nota architetturale preliminare**: `AI_PROJECT_STRUCTURE.md` §1 dice
 esplicitamente di seguire lo stack di un codebase esistente e annotare
@@ -108,7 +123,14 @@ il gap ha conseguenze pratiche reali (vedi item 13, 31).
 | **Fail** | 24 |
 | **N/A** (dipendente da infrastruttura/Hub aziendale non ancora esistente) | 7 |
 
-**Risultato: ☐ Certified · ☒ Partial — remediation required · ☐ Non-compliant**
+**Risultato ufficiale: vedi `AUDIT_2026-09-17.md`** — non "Partial" come
+scritto qui originariamente: `AI_PROJECT_AUDIT.md` §6 richiede
+l'escalation al consiglio di governance quando un **gate item** T3
+fallisce (approvazione security, penetration test, policy di retention,
+valutazione prompt-injection), *prima* di poter marcare "Partial". Qui
+falliscono almeno tre gate item (#6, #9, #10) — l'esito corretto è
+"Non conforme — escalation", non "Parziale". Corretto nel documento
+ufficiale.
 
 Non è "Non-compliant" nel senso di negligenza — è un progetto reale, con
 disciplina di audit trail, RBAC, test automatici (155 test, coperti

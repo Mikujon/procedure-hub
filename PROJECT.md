@@ -15,4 +15,6 @@
 
 **Nota sull'owner**: questo campo è normalmente obbligatorio prima di scaffoldare o proseguire (`AI_INTAKE_ASSESSMENT.md` §1.6), ma qui il progetto esiste già ed è in sviluppo attivo da settimane — bloccare tutto il lavoro in attesa di un nome avrebbe fermato sviluppo già in corso senza necessità. Registrato come gap esplicito (vedi item 30 dell'audit in `docs/AI-GOVERNANCE-AUDIT.md`) invece di essere inventato.
 
-Vedi `docs/AI-GOVERNANCE-AUDIT.md` per l'audit completo a 42 punti contro `reference/AI_Development_Standard.docx` §7.
+Vedi `AUDIT_2026-09-17.md` per l'audit ufficiale (formato `AI_PROJECT_AUDIT.md` §3, kit `v1.4.0`), `REMEDIATION_2026-09-17.md` per il piano di remediation, e `docs/AI-GOVERNANCE-AUDIT-EVIDENCE.md` per l'evidenza dettagliata riga per riga dei 42 punti.
+
+**Esito dell'audit (17 set 2026): Non conforme — escalation al Consiglio di Governance richiesta** (tre gate item T3 falliti: valutazione prompt-injection, penetration test, approvazione security scritta — `AI_PROJECT_AUDIT.md` §6 impone l'escalation prima di poter marcare "Parziale"). Non è un giudizio definitivo di negligenza — vedi `AUDIT_2026-09-17.md` per il contesto completo — ma resta la decisione del Consiglio, non di questo audit, se il progetto continua a girare durante la remediation.
