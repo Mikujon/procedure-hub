@@ -131,6 +131,48 @@ prisma/seed.ts                  dati demo (dipartimenti, utenti, ruoli, una proc
 del codice/UI reali — la cronologia sotto mostra quanto spesso questo file
 si è disallineato in passato.*
 
+**17 set 2026**: primo audit di governance AI di Procedure Hub contro
+`wearefiber/ai-governance-kit` (v1.3.1) — non una feature del prodotto,
+ma classificazione e audit del progetto stesso su richiesta esplicita
+dell'utente. Interview di classificazione (`AI_INTAKE_ASSESSMENT.md`):
+7 delle 10 domande rispondibili con prove dirette dal codice/cronologia
+(dati GDPR/PII reali — procedura demo "Gestione richieste GDPR DSAR" —,
+audit trail obbligatorio, più danno reale già dimostrato: i bug RBAC
+storici trovati e corretti in questa stessa serie di sessioni), che
+blocca il tier a **T3 — Critico/Regolamentato** indipendentemente dal
+resto. Owner (business/technical) chiesto esplicitamente ma non
+fornito — registrato come gap aperto in `PROJECT.md` (nuovo file, il
+blocco di classificazione richiesto dal kit) invece di essere inventato.
+
+Poi l'audit vero e proprio: tutti i 42 punti di
+`reference/AI_Development_Standard.docx` §7 verificati uno per uno
+contro il codice reale (non assunti) — risultato in
+`docs/AI-GOVERNANCE-AUDIT.md`. **2 Pass, 9 Partial, 24 Fail, 7 N/A**
+(dipendenti da un Hub di governance aziendale che non esiste ancora).
+Il Pass più forte: l'aggiornamento di `CLAUDE.md` ad ogni sessione è
+esattamente lo spirito del requisito #24 ("il technical owner aggiorna
+la documentazione a ogni modifica rilevante"). Il Fail più concreto e
+più a buon mercato da chiudere: **43 vulnerabilità reali nelle
+dipendenze** (`npm audit`, 1 critical + 2 high) — mai eseguito prima,
+nessuna pipeline CI esiste (`.github/workflows/` assente) a farlo
+automaticamente. Altri gap reali trovati non prima documentati: nessuna
+valutazione scritta del rischio prompt-injection per `/ask` (il
+contenuto che entra nel prompt è scritto da editor interni, non solo da
+admin fidati); `lib/ai/client.ts` usa un alias di modello
+(`gemini-flash-latest`) non pinnato e non logga token/latenza/versione
+per chiamata; nessun diagramma architetturale reale (solo narrativa);
+nessun runbook/on-call; nessuna policy di retention/deletion dati
+formalizzata (il backup/restore è testato dal vivo, ma non schedulato
+né con una retention definita, per scelta esplicita già documentata in
+`docs/BACKUP-RESTORE.md` in attesa di sapere dove girerà la produzione).
+Non "non conforme" per negligenza — un progetto con audit trail solido,
+RBAC a due livelli, 155 test reali e una disciplina di documentazione
+sopra la media, costruito prima che questo kit esistesse in azienda —
+ma la maggioranza dei 42 item resta comunque da chiudere contro il
+metro di misura formale del kit. Dettagli, motivazioni e le tre
+remediation più a buon mercato (npm audit fix, una pipeline CI minima,
+l'analisi scritta prompt-injection) in `docs/AI-GOVERNANCE-AUDIT.md`.
+
 **16 set 2026**: chiuso un secondo gap reale, di nuovo con gli item #1-3
 della roadmap ancora bloccati sulle stesse credenziali esterne di
 sempre — stavolta l'audit trail sull'export di una procedura, segnalato
