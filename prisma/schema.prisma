@@ -1,0 +1,143 @@
+// Procedure Hub — redesigned data model
+// SQLite-backed. Enums stored as String; tag lists stored as JSON string
+// (SQLite has no native array/list type per project rules).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Department {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  icon        String // lucide icon name
+  color       String // hex hue used for accents/tints
+  description String?
+  sortOrder   Int       @default(0)
+  processes   Process[]
+  procedures  Procedure[]
+  users       User[]
+  createdAt   DateTime  @default(now())
+}
+
+model Process {
+  id           String      @id @default(cuid())
+  name         String
+  sortOrder    Int         @default(0)
+  departmentId String
+  department   Department  @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  procedures   Procedure[]
+  createdAt    DateTime    @default(now())
+}
+
+model Procedure {
+  id            String         @id @default(cuid())
+  code          String         @unique // e.g. HR-PROC-001
+  title         String
+  summary       String
+  departmentId  String
+  department    Department     @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  processId     String?
+  process       Process?       @relation(fields: [processId], references: [id], onDelete: SetNull)
+  parentId      String? // Work Instruction points to parent Procedure
+  parent        Procedure?     @relation("ProcedureTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children      Procedure[]    @relation("ProcedureTree")
+  status        String         @default("DRAFT") // DRAFT | IN_REVIEW | PUBLISHED | ARCHIVED
+  version       Int            @default(1)
+  criticality   String         @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  visibility    String         @default("ALL") // ALL | RESTRICTED
+  tags          String         @default("[]") // JSON array of strings
+  content       String         @default("[]") // JSON array of blocks
+  ownerId       String
+  owner         User           @relation(fields: [ownerId], references: [id])
+  ackRequired   Boolean        @default(true)
+  readMinutes   Int            @default(5)
+  nextReviewAt  DateTime?
+  publishedAt   DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  favorites     Favorite[]
+  acknowledgments Acknowledgment[]
+  auditLogs     AuditLog[]
+}
+
+model User {
+  id            String         @id @default(cuid())
+  name          String
+  email         String         @unique
+  role          String         @default("VIEWER") // ADMIN | COMPLIANCE | OWNER | EDITOR | VIEWER
+  title         String?
+  avatarColor   String         @default("#c2410c")
+  departmentId  String?
+  department    Department?    @relation(fields: [departmentId], references: [id])
+  createdAt     DateTime       @default(now())
+
+  favorites     Favorite[]
+  acknowledgments Acknowledgment[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
+  ownedProcedures Procedure[]
+}
+
+model Favorite {
+  id          String    @id @default(cuid())
+  userId      String
+  procedureId String
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  procedure   Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, procedureId])
+}
+
+model Acknowledgment {
+  id          String    @id @default(cuid())
+  userId      String
+  procedureId String
+  version     Int
+  acknowledgedAt DateTime @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  procedure   Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, procedureId, version])
+}
+
+model Notification {
+  id          String    @id @default(cuid())
+  userId      String
+  type        String    // REVIEW_REQUEST | ACK_DUE | PUBLISHED | MENTION | OVERDUE
+  title       String
+  body        String
+  read        Boolean   @default(false)
+  procedureId String?
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id          String    @id @default(cuid())
+  action      String    // CREATE | UPDATE | SUBMIT | APPROVE | REJECT | PUBLISH | ARCHIVE | ACK | FAVORITE
+  entityType  String    // PROCEDURE | PROCESS | DEPARTMENT | USER
+  entityId    String
+  summary     String
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  procedureId String?
+  procedure   Procedure? @relation(fields: [procedureId], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+}
+
+model Announcement {
+  id          String    @id @default(cuid())
+  title       String
+  body        String
+  variant     String    @default("info") // info | success | warning
+  pinned      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+}
