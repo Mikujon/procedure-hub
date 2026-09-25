@@ -75,3 +75,56 @@ Verification (agent-browser + curl):
 
 Stage Summary:
 - All three features live, end-to-end verified. Procedure Hub is now a multi-tenant workspace with real auth, a Notion-style block editor, and a grounded AI assistant — all on the single / route. Two demo tenants (password "password123" for all accounts): Atelier Corp (elena.marchetti@procedurehub.io) and Northwind Logistics (nora.lindqvist@northwind.io).
+
+---
+Task ID: 4
+Agent: main (Z.ai Code)
+Task: Add real-time collaboration via WebSocket (best practices).
+
+Work Log:
+- Created a standalone Socket.io mini-service at mini-services/collab-service/ (port 3003, `bun --hot` for auto-restart). Own package.json with socket.io + jose deps.
+- Server design (best practices):
+  - Authenticated handshake: every socket must present a valid NextAuth JWT (cookie `next-auth.session-token`). Anonymous sockets rejected.
+  - Key derivation: NextAuth v4 uses JWE (alg=dir, enc=A256GCM) with an HKDF-derived key (sha256, empty salt, info="NextAuth.js Generated Encryption Key", 32 bytes). Mirrors next-auth/jwt's getDerivedEncryptionKey exactly. Uses jose's jwtDecrypt + Node crypto.hkdfSync.
+  - Tenant isolation: rooms namespaced `t:{tenantId}:p:{procedureId}`. Cross-tenant joins refused (defense-in-depth: the client sends its tenantId, the server already authenticated it from the JWT).
+  - Presence: join/leave broadcasts the viewer list to the room; newcomer gets presence:init with all current users + active locks.
+  - Field-level locks: block:claim/heartbeat/release. Locks auto-expire after 6s of inactivity (heartbeat sweeper runs every 2s) so dead clients don't strand blocks. A rejected claim tells the claimer who holds it.
+  - Live patches: content:patch relays small block changes in real time (no persistence — the editor saves via the Next.js API; this server only relays). procedure:saved notifies others to refetch.
+  - Graceful shutdown (SIGTERM/SIGINT), path="/" (gateway routing constraint).
+
+- Client side (main project):
+  - Installed socket.io-client + jose.
+  - src/lib/collab/client.ts: socket.io singleton, connects to "/?XTransformPort=3003" (relative path through Caddy), transports=["websocket","polling"] (polling fallback for proxies that don't upgrade WS cleanly), withCredentials=true (sends the NextAuth cookie).
+  - src/lib/collab/use-collab.ts: useCollab(procedureId) hook. Connects when authenticated + viewing a procedure. Joins the room, tracks presence, locks, incoming patches, and save notifications. Exposes claimBlock/heartbeat/releaseBlock/broadcastPatch/broadcastSaved + lockFor(i) + presence list (excluding self). Clean disconnect on unmount/procedure-change.
+  - src/components/collab/presence.tsx: PresenceBar (stacked avatars + connection dot + "N others" label) + EditingBadge (inline "X editing" chip on a locked block).
+
+- Wired into the editor:
+  - BlockEditor accepts optional collab props (lockFor, claimBlock, releaseBlock, heartbeat, lastPatch, applyPatch, onBlockPatch). Each SortableBlock shows a colored inset shadow + a floating "X editing" badge when another user holds the lock. onFocus claims the block + starts a 3s heartbeat; onBlur stops the heartbeat + releases. Incoming patches are applied via applyPatch (idempotent JSON-stringify diff). Outgoing patches are debounced ~150ms.
+  - EditView: uses useCollab(selectedProcedureId), shows PresenceBar in the toolbar, passes all collab props to BlockEditor. On save, broadcasts procedure:saved so other editors/viewers refetch. On receiving savedBy from another user, shows a toast + dispatches a refetch.
+  - ProcedureDetailView: also uses useCollab — shows PresenceBar in the action bar, and on savedBy from another editor, toasts + invalidates the React Query cache for the procedure.
+
+- Gateway: the existing Caddyfile already routes `?XTransformPort=3003` → localhost:3003. Verified the socket.io handshake polling probe returns 200 through Caddy:81. Browser must access via localhost:81 (through Caddy) so the relative `/?XTransformPort=3003` socket URL routes correctly — accessing localhost:3000 directly bypasses Caddy and breaks the socket.
+
+- Debugging journey: first attempt used jwtVerify (HS256) — failed because NextAuth v4 uses JWE encryption, not signed JWTs. Switched to jwtDecrypt with SHA-256(secret) — still failed ("decryption operation failed"). Discovered NextAuth v4 uses HKDF (not raw SHA-256) by reading node_modules/next-auth/jwt/index.js: `getDerivedEncryptionKey` = `hkdf("sha256", secret, "", "NextAuth.js Generated Encryption Key", 32)`. Fixed to use crypto.hkdfSync with the exact same parameters → decryption succeeded, sockets authenticated.
+
+Verification:
+- Elena connected via the browser (through Caddy:81), authenticated via the decrypted JWT, joined the procedure room: `[collab] connect Elena Marchetti` + `joined room t:...:p:... (now 1)`.
+- A second client (Marco) connected via a Node socket.io-client script with Marco's session cookie: `[collab] connect Marco Rossi` + `joined room (now 2)`.
+- Marco received presence:init with both users: `users: Elena Marchetti, Marco Rossi`.
+- Marco claimed block 0: `block:claimed idx=0 by Marco Rossi`.
+- Elena's browser updated IN REAL TIME: `otherCount: 1` (she saw Marco in the presence bar while he was connected).
+- Marco disconnected cleanly: server cleaned up the room.
+- ESLint clean. No server errors.
+
+Best practices applied:
+- Authenticated sockets (no anonymous collaboration)
+- Tenant-scoped rooms (cross-tenant isolation enforced server-side)
+- Field-level optimistic locks with TTL + heartbeat (dead clients don't strand blocks)
+- Debounced live patches (150ms — not every keystroke)
+- Polling transport fallback (proxy resilience)
+- Clean lifecycle (join on mount, leave on unmount, dispose on sign-out)
+- Persistence stays the source of truth (server relays only; saves go through the audited Next.js API)
+- No CRDT/Yjs complexity — simple last-writer-wins on save, appropriate for this scale
+
+Stage Summary:
+- Real-time collaboration is live: presence (who's viewing/editing), field-level block locks (with colored indicators + editing badges), and debounced live content sync. The mini-service runs on port 3003, authenticated against the same NextAuth JWT as the web app, tenant-isolated. Verified end-to-end with two concurrent sessions (browser + script client). All four services running: Next.js (:3000), Caddy gateway (:81), collab Socket.io (:3003).

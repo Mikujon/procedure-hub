@@ -74,9 +74,28 @@ function newBlock(type: InsertType): Block {
 export function BlockEditor({
   value,
   onChange,
+  lockFor,
+  claimBlock,
+  releaseBlock,
+  heartbeat,
+  onBlockFocus,
+  onBlockBlur,
+  lastPatch,
+  applyPatch,
+  onBlockPatch,
 }: {
   value: Block[];
   onChange: (blocks: Block[]) => void;
+  // collab props (all optional — editor works without them)
+  lockFor?: (blockIndex: number) => { user: { id: string; name: string; color: string } } | null;
+  claimBlock?: (blockIndex: number) => void;
+  releaseBlock?: (blockIndex: number) => void;
+  heartbeat?: (blockIndex: number) => void;
+  onBlockFocus?: (blockIndex: number) => void;
+  onBlockBlur?: (blockIndex: number) => void;
+  lastPatch?: { blockIndex: number; block: unknown; by: { id: string; name: string; color: string } } | null;
+  applyPatch?: (blockIndex: number, block: Block) => void;
+  onBlockPatch?: (blockIndex: number, block: Block) => void;
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -84,7 +103,10 @@ export function BlockEditor({
   );
 
   const update = (i: number, patch: Partial<Block>) => {
-    onChange(value.map((b, idx) => (idx === i ? ({ ...b, ...patch } as Block) : b)));
+    const merged = { ...value[i], ...patch } as Block;
+    const next = value.map((b, idx) => (idx === i ? merged : b));
+    onChange(next);
+    onBlockPatch?.(i, merged);
   };
   const remove = (i: number) => onChange(value.filter((_, idx) => idx !== i));
   const insert = (i: number, type: InsertType) => {
@@ -96,6 +118,12 @@ export function BlockEditor({
     if (to < 0 || to >= value.length) return;
     onChange(arrayMove(value, from, to));
   };
+
+  // Apply incoming real-time patches from other editors (idempotent if no-op).
+  React.useEffect(() => {
+    if (!lastPatch || !applyPatch) return;
+    applyPatch(lastPatch.blockIndex, lastPatch.block as Block);
+  }, [lastPatch, applyPatch]);
 
   const handleDragEnd = (e: DragEndEvent) => {
     const { active, over } = e;
@@ -121,6 +149,7 @@ export function BlockEditor({
             <SortableBlock
               key={i}
               id={i}
+              blockIndex={i}
               block={block}
               onUpdate={(patch) => update(i, patch)}
               onRemove={() => remove(i)}
@@ -129,6 +158,12 @@ export function BlockEditor({
               onMoveDown={() => move(i, i + 1)}
               isFirst={i === 0}
               isLast={i === value.length - 1}
+              lock={lockFor?.(i) ?? null}
+              claimBlock={claimBlock}
+              releaseBlock={releaseBlock}
+              heartbeat={heartbeat}
+              onBlockFocus={onBlockFocus}
+              onBlockBlur={onBlockBlur}
             />
           ))}
         </div>
@@ -144,6 +179,7 @@ export function BlockEditor({
 // ---- a single sortable block row -----------------------------------------
 function SortableBlock({
   id,
+  blockIndex,
   block,
   onUpdate,
   onRemove,
@@ -152,8 +188,15 @@ function SortableBlock({
   onMoveDown,
   isFirst,
   isLast,
+  lock,
+  claimBlock,
+  releaseBlock,
+  heartbeat,
+  onBlockFocus,
+  onBlockBlur,
 }: {
   id: number;
+  blockIndex: number;
   block: Block;
   onUpdate: (patch: Partial<Block>) => void;
   onRemove: () => void;
@@ -162,6 +205,12 @@ function SortableBlock({
   onMoveDown: () => void;
   isFirst: boolean;
   isLast: boolean;
+  lock: { user: { id: string; name: string; color: string } } | null;
+  claimBlock?: (blockIndex: number) => void;
+  releaseBlock?: (blockIndex: number) => void;
+  heartbeat?: (blockIndex: number) => void;
+  onBlockFocus?: (blockIndex: number) => void;
+  onBlockBlur?: (blockIndex: number) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id });
@@ -172,15 +221,59 @@ function SortableBlock({
     zIndex: isDragging ? 20 : undefined,
   };
 
+  // Heartbeat ticker while this block is focused: every 3s keeps the
+  // server-side lock alive (server TTL is 6s, so 3s is safely inside).
+  const heartbeatRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const startHeartbeat = React.useCallback(() => {
+    if (heartbeatRef.current) return;
+    heartbeatRef.current = setInterval(() => {
+      heartbeat?.(blockIndex);
+    }, 3000);
+  }, [blockIndex, heartbeat]);
+  const stopHeartbeat = React.useCallback(() => {
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
+  }, []);
+  React.useEffect(() => () => stopHeartbeat(), [stopHeartbeat]);
+
+  const handleFocus = () => {
+    claimBlock?.(blockIndex);
+    startHeartbeat();
+    onBlockFocus?.(blockIndex);
+  };
+  const handleBlur = () => {
+    stopHeartbeat();
+    releaseBlock?.(blockIndex);
+    onBlockBlur?.(blockIndex);
+  };
+
+  const mergedStyle: React.CSSProperties = {
+    ...style,
+    ...(lock ? { boxShadow: `inset 3px 0 0 ${lock.user.color}` } : {}),
+  };
+
   return (
     <div
       ref={setNodeRef}
-      style={style}
+      style={mergedStyle}
       className={cn(
-        "group relative flex items-start gap-1.5 rounded-lg",
+        "group relative flex items-start gap-1.5 rounded-lg transition-colors",
         isDragging && "shadow-[var(--shadow-lift)] bg-card opacity-95"
       )}
     >
+      {/* editing-by-other indicator */}
+      {lock && (
+        <span
+          className="pointer-events-none absolute -top-2 right-2 z-10 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium shadow-[var(--shadow-soft)]"
+          style={{ backgroundColor: `${lock.user.color}1f`, color: lock.user.color }}
+        >
+          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: lock.user.color }} />
+          {lock.user.name.split(" ")[0]}
+        </span>
+      )}
+
       {/* row controls */}
       <div className="flex shrink-0 flex-col items-center gap-0.5 pt-1.5 opacity-0 transition-opacity group-hover:opacity-100">
         <button
@@ -195,7 +288,11 @@ function SortableBlock({
       </div>
 
       {/* the block editor */}
-      <div className="min-w-0 flex-1 py-1">
+      <div
+        className="min-w-0 flex-1 py-1"
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+      >
         <BlockFields block={block} onUpdate={onUpdate} />
       </div>
 

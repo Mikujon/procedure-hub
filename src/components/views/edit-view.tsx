@@ -13,9 +13,11 @@ import {
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useProcedure, useSaveContent } from "@/lib/hooks";
+import { useCollab } from "@/lib/collab/use-collab";
 import { toast } from "sonner";
 import { BlockEditor } from "@/components/editor/block-editor";
 import { StatusBadge, CriticalityBadge } from "@/components/shared/badges";
+import { PresenceBar } from "@/components/collab/presence";
 import type { Block, Criticality } from "@/lib/types";
 import { CRITICALITY_CONFIG } from "@/lib/domain";
 import { cn } from "@/lib/utils";
@@ -26,6 +28,7 @@ export function EditView() {
   const { selectedProcedureId, openProcedure, editProcedure } = useAppStore();
   const { data: proc, isLoading } = useProcedure(selectedProcedureId);
   const save = useSaveContent(selectedProcedureId);
+  const collab = useCollab(selectedProcedureId);
 
   const [blocks, setBlocks] = React.useState<Block[]>([]);
   const [title, setTitle] = React.useState("");
@@ -35,6 +38,50 @@ export function EditView() {
   const [readMinutes, setReadMinutes] = React.useState(5);
   const [tagInput, setTagInput] = React.useState("");
   const [dirty, setDirty] = React.useState(false);
+
+  // apply an incoming live patch from another editor
+  const applyPatch = React.useCallback(
+    (blockIndex: number, block: Block) => {
+      setBlocks((prev) => {
+        if (blockIndex < 0 || blockIndex >= prev.length) return prev;
+        if (JSON.stringify(prev[blockIndex]) === JSON.stringify(block)) return prev;
+        const next = [...prev];
+        next[blockIndex] = block;
+        return next;
+      });
+    },
+    []
+  );
+
+  // broadcast a block change to other editors (debounced ~150ms)
+  const pendingPatches = React.useRef<Map<number, Block>>(new Map());
+  const patchTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const collabRef = React.useRef(collab);
+  React.useEffect(() => {
+    collabRef.current = collab;
+  }, [collab]);
+
+  const onBlockPatch = (blockIndex: number, block: Block) => {
+    pendingPatches.current.set(blockIndex, block);
+    if (patchTimer.current) clearTimeout(patchTimer.current);
+    patchTimer.current = setTimeout(() => {
+      const c = collabRef.current;
+      if (!c.connected || !selectedProcedureId) {
+        pendingPatches.current.clear();
+        return;
+      }
+      for (const [idx, blk] of pendingPatches.current.entries()) {
+        c.broadcastPatch(idx, blk);
+      }
+      pendingPatches.current.clear();
+    }, 150);
+  };
+
+  const markDirty = React.useCallback(() => setDirty(true), []);
+  const onBlocksChange = (b: Block[]) => {
+    setBlocks(b);
+    markDirty();
+  };
 
   // hydrate from server data
   React.useEffect(() => {
@@ -48,13 +95,6 @@ export function EditView() {
       setDirty(false);
     }
   }, [proc?.id, proc?.content]);
-
-  const markDirty = React.useCallback(() => setDirty(true), []);
-
-  const onBlocksChange = (b: Block[]) => {
-    setBlocks(b);
-    markDirty();
-  };
 
   const onSave = () => {
     if (!selectedProcedureId) return;
@@ -73,11 +113,26 @@ export function EditView() {
             description: "Changes are recorded in the audit trail.",
           });
           setDirty(false);
+          collab.broadcastSaved();
         },
         onError: (e: any) => toast.error(e.message ?? "Save failed"),
       }
     );
   };
+
+  // when another editor saves, refetch + briefly notify
+  React.useEffect(() => {
+    if (!collab.savedBy) return;
+    toast.info(`${collab.savedBy.name} saved this procedure`, {
+      description: "Refreshing content…",
+    });
+    // invalidate via the React Query cache key on the procedure
+    const id = setTimeout(() => {
+      window.dispatchEvent(new CustomEvent("collab:refetch-procedure", { detail: selectedProcedureId }));
+    }, 400);
+    collab.clearSavedBy();
+    return () => clearTimeout(id);
+  }, [collab.savedBy]);
 
   const addTag = () => {
     const t = tagInput.trim().toLowerCase();
@@ -126,6 +181,9 @@ export function EditView() {
                 unsaved
               </span>
             )}
+            <div className="ml-2 hidden sm:block">
+              <PresenceBar others={collab.presence} connected={collab.connected} />
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -173,7 +231,17 @@ export function EditView() {
 
         {/* block editor */}
         <div className="mt-6 rounded-xl border border-border bg-card p-4 sm:p-5">
-          <BlockEditor value={blocks} onChange={onBlocksChange} />
+          <BlockEditor
+            value={blocks}
+            onChange={onBlocksChange}
+            lockFor={collab.lockFor}
+            claimBlock={collab.claimBlock}
+            releaseBlock={collab.releaseBlock}
+            heartbeat={collab.heartbeat}
+            lastPatch={collab.lastPatch}
+            applyPatch={applyPatch}
+            onBlockPatch={onBlockPatch}
+          />
         </div>
       </div>
 

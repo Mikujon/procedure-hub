@@ -22,6 +22,9 @@ import {
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useProcedure, useAck, useToggleFavorite, useTransition } from "@/lib/hooks";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCollab } from "@/lib/collab/use-collab";
+import { PresenceBar } from "@/components/collab/presence";
 import { toast } from "sonner";
 import { ContentRenderer } from "@/components/procedure/content-renderer";
 import { WorkflowTimeline } from "@/components/procedure/workflow-timeline";
@@ -45,6 +48,18 @@ export function ProcedureDetailView() {
   const fav = useToggleFavorite(selectedProcedureId);
   const transition = useTransition(selectedProcedureId);
   const [askOpen, setAskOpen] = React.useState(false);
+  const collab = useCollab(selectedProcedureId);
+  const qc = useQueryClient();
+
+  // when another editor saves the procedure, refetch to show their content
+  React.useEffect(() => {
+    if (!collab.savedBy || !selectedProcedureId) return;
+    toast.info(`${collab.savedBy.name} updated this procedure`, {
+      description: "Refreshing…",
+    });
+    qc.invalidateQueries({ queryKey: ["procedure", selectedProcedureId] });
+    collab.clearSavedBy();
+  }, [collab.savedBy, selectedProcedureId]);
 
   const onAck = () => {
     ack.mutate(undefined, {
@@ -148,6 +163,7 @@ export function ProcedureDetailView() {
 
           {/* Action bar */}
           <div className="flex flex-wrap items-center gap-2 pt-1">
+            <PresenceBar others={collab.presence} connected={collab.connected} />
             {proc.ackRequired && proc.status === "PUBLISHED" && (
               proc.acknowledged ? (
                 <span className="inline-flex items-center gap-2 rounded-lg border border-status-published/30 bg-status-published/10 px-3 py-2 text-sm font-medium text-status-published">
