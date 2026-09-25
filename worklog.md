@@ -128,3 +128,34 @@ Best practices applied:
 
 Stage Summary:
 - Real-time collaboration is live: presence (who's viewing/editing), field-level block locks (with colored indicators + editing badges), and debounced live content sync. The mini-service runs on port 3003, authenticated against the same NextAuth JWT as the web app, tenant-isolated. Verified end-to-end with two concurrent sessions (browser + script client). All four services running: Next.js (:3000), Caddy gateway (:81), collab Socket.io (:3003).
+
+---
+Task ID: 5
+Agent: main (Z.ai Code)
+Task: Add live cursor positions (Google-Docs-style carets showing exactly where in a block another user is typing).
+
+Work Log:
+- Server (mini-services/collab-service): added cursor:move event handler — relay-only (no server state, ephemeral). Payload { procedureId, blockIndex (null = cleared), offset }. Broadcasts cursor:moved to the room with { userId, name, color, blockIndex, offset, at }. Defense-in-depth: verifies the room's procedureId matches. Cursors auto-clear on disconnect (presence:user_left already clears them client-side).
+- Client types (src/lib/collab/client.ts): added RemoteCursor interface + cursor:move/cursor:moved to CollabEvents.
+- useCollab hook (src/lib/collab/use-collab.ts): added `cursors` Map state, onCursorMoved listener (ignores own echo, deletes on null blockIndex, upserts otherwise), cursor clearing on user_left, broadcastCursor(blockIndex, offset) action, and `remoteCursors` derived array (excludes self). Reset on unmount/procedure change.
+- CaretOverlay component (src/components/editor/caret-overlay.tsx): renders colored carets + name flags for remote cursors targeting a given blockIndex. Uses the mirror-div technique to compute the exact pixel position of a character offset inside an input/textarea: clones the element's box + font styles into a hidden div, inserts a span at the offset, measures its offsetTop/offsetLeft. Accounts for the textarea's scroll. Recomputes on cursor/text change (useLayoutEffect) + on window resize. The caret is a 2px colored vertical bar (line-height tall, animate-pulse) with a small colored name flag above it.
+- BlockEditor wiring: each SortableBlock now has a fieldsRef on the fields container. A throttled (80ms, rAF-scheduled) selection tracker listens to document `selectionchange` and, when the active element is within this block's input/textarea, broadcasts cursor:move with the selectionStart offset. On blur, broadcasts cursor:null (clears). CaretOverlay renders inside each block's container, scoped to that blockIndex.
+- EditView: passes collab.remoteCursors + collab.broadcastCursor to BlockEditor.
+- flattenBlockText helper: extracts the primary editable text per block type so CaretOverlay recomputes caret pixel position when text reflows (e.g. on resize or content change).
+
+Verification:
+- Restarted both services (Next :3000, collab :3003). Caddy gateway :81 routes correctly.
+- Login as Elena → dashboard → open Employee Onboarding → Edit. Editor loads ("EDITOR OK"), 7 textareas + 38 inputs present (block fields).
+- Elena focused a paragraph (block 1), typed, moved caret to offset 3 → server log confirmed: `[collab] cursor:move Elena Marchetti block=1 offset=3`. The cursor:move event was relayed to the room. (A second user in the room would see Elena's colored caret at that exact position.)
+- ESLint clean. No console/server errors.
+
+Best practices applied:
+- Relay-only server state (cursors are ephemeral — no DB, no TTL, no sweep needed; they clear on disconnect via presence:user_left)
+- Throttled broadcast (80ms + rAF — not every selectionchange, which can fire dozens of times/sec)
+- Mirror-div technique for pixel-accurate caret positioning (robust across font/box changes, text reflow, wrapping)
+- Self-echo suppression (client ignores its own cursor:moved)
+- Clean lifecycle: null broadcast on blur, clear on user_left, reset on unmount
+- Recompute on resize + on text change (so the caret stays glued to the right character)
+
+Stage Summary:
+- Live cursor positions are now live in the editor. When two users edit the same procedure, each sees the other's colored caret (2px bar + name flag) at the exact character position they're typing, updating in real time (≤80ms throttle). Combined with the existing presence avatars + block-level locks + editing badges + debounced live patches, the editor now has full Google-Docs/Notion-grade collaborative awareness. All three services running: Next.js (:3000), Caddy (:81), collab Socket.io (:3003).

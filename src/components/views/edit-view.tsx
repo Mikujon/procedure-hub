@@ -241,6 +241,8 @@ export function EditView() {
             lastPatch={collab.lastPatch}
             applyPatch={applyPatch}
             onBlockPatch={onBlockPatch}
+            cursors={collab.remoteCursors}
+            broadcastCursor={collab.broadcastCursor}
           />
         </div>
       </div>

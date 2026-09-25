@@ -274,6 +274,23 @@ io.on("connection", (socket) => {
     });
   });
 
+  // cursor position: relay only (ephemeral, no server state).
+  // payload.blockIndex === null means "cleared" (user blurred / left the block).
+  socket.on("cursor:move", (payload: { procedureId: string; blockIndex: number | null; offset: number }) => {
+    if (!currentRoomId || !payload) return;
+    const room = rooms.get(currentRoomId);
+    if (!room || room.procedureId !== payload.procedureId) return;
+    socket.to(currentRoomId).emit("cursor:moved", {
+      procedureId: payload.procedureId,
+      userId: user.id,
+      name: user.name,
+      color: user.avatarColor,
+      blockIndex: payload.blockIndex,
+      offset: payload.offset ?? 0,
+      at: Date.now(),
+    });
+  });
+
   // ---- cleanup ----------------------------------------------------------
   const onDisconnect = () => {
     if (currentRoomId) {

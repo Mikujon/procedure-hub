@@ -39,6 +39,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Block } from "@/lib/types";
+import type { RemoteCursor } from "@/lib/collab/client";
+import { CaretOverlay } from "@/components/editor/caret-overlay";
 
 // ---- block type registry --------------------------------------------------
 type InsertType = Block["type"];
@@ -83,6 +85,8 @@ export function BlockEditor({
   lastPatch,
   applyPatch,
   onBlockPatch,
+  cursors,
+  broadcastCursor,
 }: {
   value: Block[];
   onChange: (blocks: Block[]) => void;
@@ -96,6 +100,8 @@ export function BlockEditor({
   lastPatch?: { blockIndex: number; block: unknown; by: { id: string; name: string; color: string } } | null;
   applyPatch?: (blockIndex: number, block: Block) => void;
   onBlockPatch?: (blockIndex: number, block: Block) => void;
+  cursors?: RemoteCursor[];
+  broadcastCursor?: (blockIndex: number | null, offset: number) => void;
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -164,6 +170,8 @@ export function BlockEditor({
               heartbeat={heartbeat}
               onBlockFocus={onBlockFocus}
               onBlockBlur={onBlockBlur}
+              cursors={cursors ?? []}
+              broadcastCursor={broadcastCursor}
             />
           ))}
         </div>
@@ -194,6 +202,8 @@ function SortableBlock({
   heartbeat,
   onBlockFocus,
   onBlockBlur,
+  cursors,
+  broadcastCursor,
 }: {
   id: number;
   blockIndex: number;
@@ -211,6 +221,8 @@ function SortableBlock({
   heartbeat?: (blockIndex: number) => void;
   onBlockFocus?: (blockIndex: number) => void;
   onBlockBlur?: (blockIndex: number) => void;
+  cursors: RemoteCursor[];
+  broadcastCursor?: (blockIndex: number | null, offset: number) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id });
@@ -247,7 +259,62 @@ function SortableBlock({
     stopHeartbeat();
     releaseBlock?.(blockIndex);
     onBlockBlur?.(blockIndex);
+    // clear our cursor so others don't see a stale caret
+    broadcastCursor?.(null, 0);
   };
+
+  // ---- cursor tracking (broadcast where the caret is) ----
+  const fieldsRef = React.useRef<HTMLDivElement | null>(null);
+  // throttle: broadcast at most every 80ms
+  const lastCursorBroadcast = React.useRef(0);
+  const pendingCursorRaf = React.useRef<number | null>(null);
+
+  const emitCursor = React.useCallback(() => {
+    pendingCursorRaf.current = null;
+    const el = fieldsRef.current?.querySelector(
+      "input, textarea"
+    ) as HTMLInputElement | HTMLTextAreaElement | null;
+    if (!el || document.activeElement !== el) {
+      return;
+    }
+    const offset =
+      typeof el.selectionStart === "number" ? el.selectionStart : 0;
+    const now = Date.now();
+    if (now - lastCursorBroadcast.current < 80) return; // throttle
+    lastCursorBroadcast.current = now;
+    broadcastCursor?.(blockIndex, offset);
+  }, [blockIndex, broadcastCursor]);
+
+  const scheduleCursorEmit = React.useCallback(() => {
+    if (pendingCursorRaf.current != null) return;
+    pendingCursorRaf.current = requestAnimationFrame(emitCursor);
+  }, [emitCursor]);
+
+  // listen for selection changes while this block is focused
+  React.useEffect(() => {
+    const onSelectionChange = () => {
+      const el = fieldsRef.current?.querySelector(
+        "input, textarea"
+      ) as HTMLElement | null;
+      if (el && document.activeElement === el) {
+        scheduleCursorEmit();
+      }
+    };
+    document.addEventListener("selectionchange", onSelectionChange);
+    return () => document.removeEventListener("selectionchange", onSelectionChange);
+  }, [scheduleCursorEmit]);
+
+  React.useEffect(
+    () => () => {
+      if (pendingCursorRaf.current != null) {
+        cancelAnimationFrame(pendingCursorRaf.current);
+      }
+    },
+    []
+  );
+
+  // flattened text of this block (used by CaretOverlay to recompute on reflow)
+  const blockText = React.useMemo(() => flattenBlockText(block), [block]);
 
   const mergedStyle: React.CSSProperties = {
     ...style,
@@ -289,11 +356,21 @@ function SortableBlock({
 
       {/* the block editor */}
       <div
-        className="min-w-0 flex-1 py-1"
+        ref={fieldsRef}
+        className="relative min-w-0 flex-1 py-1"
         onFocus={handleFocus}
         onBlur={handleBlur}
       >
         <BlockFields block={block} onUpdate={onUpdate} />
+        {/* remote cursors rendered as colored carets inside this block */}
+        {broadcastCursor && (
+          <CaretOverlay
+            blockIndex={blockIndex}
+            cursors={cursors}
+            containerRef={fieldsRef}
+            blockText={blockText}
+          />
+        )}
       </div>
 
       {/* remove + move */}
@@ -721,4 +798,20 @@ function InsertButton({ onInsert }: { onInsert: (type: InsertType) => void }) {
       <span className="text-xs text-muted-foreground">Add a block, or drag rows to reorder</span>
     </div>
   );
+}
+
+// flatten a block to its primary editable text (for cursor reflow tracking)
+function flattenBlockText(block: Block): string {
+  switch (block.type) {
+    case "heading": return block.text;
+    case "paragraph": return block.text;
+    case "callout": return [block.title ?? "", block.text].join("\n");
+    case "checklist": return block.items.map((i) => i.text).join("\n");
+    case "steps": return block.items.join("\n");
+    case "quote": return block.text;
+    case "code": return block.text;
+    case "table": return [...block.headers, ...block.rows.flat()].join("\n");
+    case "divider": return "";
+    case "definition": return block.term + " " + block.definition;
+  }
 }

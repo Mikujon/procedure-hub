@@ -63,6 +63,15 @@ export interface ContentPatch {
   at: number;
 }
 
+export interface RemoteCursor {
+  userId: string;
+  name: string;
+  color: string;
+  blockIndex: number | null; // null = cursor cleared (user blurred)
+  offset: number;
+  at: number;
+}
+
 export type CollabEvents = {
   // outbound (client → server)
   "procedure:join": (p: { procedureId: string; tenantId: string }) => void;
@@ -72,6 +81,7 @@ export type CollabEvents = {
   "block:release": (p: { procedureId: string; blockIndex: number }) => void;
   "content:patch": (p: { procedureId: string; blockIndex: number; block: unknown }) => void;
   "procedure:saved": (p: { procedureId: string }) => void;
+  "cursor:move": (p: { procedureId: string; blockIndex: number | null; offset: number }) => void;
 
   // inbound (server → client)
   "presence:init": (p: { procedureId: string; users: PresenceUser[]; locks: BlockLock[] }) => void;
@@ -82,4 +92,5 @@ export type CollabEvents = {
   "block:released": (p: { procedureId: string; blockIndex: number }) => void;
   "content:update": (p: ContentPatch) => void;
   "procedure:saved": (p: { procedureId: string; by: { id: string; name: string; color: string }; at: number }) => void;
+  "cursor:moved": (p: RemoteCursor) => void;
 };

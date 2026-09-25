@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useSession } from "next-auth/react";
 import { getCollabSocket } from "@/lib/collab/client";
-import type { PresenceUser, BlockLock, ContentPatch } from "@/lib/collab/client";
+import type { PresenceUser, BlockLock, ContentPatch, RemoteCursor } from "@/lib/collab/client";
 
 /**
  * useCollab — real-time collaboration scoped to a single procedure.
@@ -29,6 +29,7 @@ export function useCollab(procedureId: string | null) {
   const [locks, setLocks] = React.useState<BlockLock[]>([]);
   const [lastPatch, setLastPatch] = React.useState<ContentPatch | null>(null);
   const [savedBy, setSavedBy] = React.useState<{ name: string; color: string; at: number } | null>(null);
+  const [cursors, setCursors] = React.useState<Map<string, RemoteCursor>>(new Map());
 
   const me = React.useMemo(() => {
     if (status !== "authenticated" || !session?.user) return null;
@@ -63,9 +64,6 @@ export function useCollab(procedureId: string | null) {
         prev.some((u) => u.id === p.user.id) ? prev : [...prev, p.user]
       );
     };
-    const onUserLeft = (p: { userId: string }) => {
-      setPresence((prev) => prev.filter((u) => u.id !== p.userId));
-    };
     const onBlockClaimed = (p: { blockIndex: number; user: { id: string; name: string; color: string } }) => {
       setLocks((prev) => {
         const filtered = prev.filter((l) => l.blockIndex !== p.blockIndex);
@@ -84,6 +82,28 @@ export function useCollab(procedureId: string | null) {
       if (p.by.id === me.id) return;
       setSavedBy({ name: p.by.name, color: p.by.color, at: p.at });
     };
+    const onCursorMoved = (p: RemoteCursor) => {
+      if (p.userId === me.id) return; // ignore our own echo
+      setCursors((prev) => {
+        const next = new Map(prev);
+        if (p.blockIndex === null) {
+          next.delete(p.userId);
+        } else {
+          next.set(p.userId, p);
+        }
+        return next;
+      });
+    };
+    const onUserLeft = (p: { userId: string }) => {
+      setPresence((prev) => prev.filter((u) => u.id !== p.userId));
+      // clear that user's cursor
+      setCursors((prev) => {
+        if (!prev.has(p.userId)) return prev;
+        const next = new Map(prev);
+        next.delete(p.userId);
+        return next;
+      });
+    };
 
     // attach listeners
     socket.on("connect", onConnect);
@@ -95,6 +115,7 @@ export function useCollab(procedureId: string | null) {
     socket.on("block:released", onBlockReleased);
     socket.on("content:update", onContentUpdate);
     socket.on("procedure:saved", onProcedureSaved);
+    socket.on("cursor:moved", onCursorMoved);
 
     // if already connected, join immediately
     if (socket.connected) {
@@ -112,10 +133,12 @@ export function useCollab(procedureId: string | null) {
       socket.off("block:released", onBlockReleased);
       socket.off("content:update", onContentUpdate);
       socket.off("procedure:saved", onProcedureSaved);
+      socket.off("cursor:moved", onCursorMoved);
       setPresence([]);
       setLocks([]);
       setLastPatch(null);
       setSavedBy(null);
+      setCursors(new Map());
     };
   }, [procedureId, me?.id, me?.tenantId]);
 
@@ -152,10 +175,23 @@ export function useCollab(procedureId: string | null) {
     if (!procedureId) return;
     getCollabSocket().emit("procedure:saved", { procedureId });
   }, [procedureId]);
+  const broadcastCursor = React.useCallback(
+    (blockIndex: number | null, offset: number) => {
+      if (!procedureId) return;
+      getCollabSocket().emit("cursor:move", { procedureId, blockIndex, offset });
+    },
+    [procedureId]
+  );
 
   const lockFor = React.useCallback(
     (blockIndex: number) => locks.find((l) => l.blockIndex === blockIndex) ?? null,
     [locks]
+  );
+
+  // other users' active cursors (excludes self), as an array
+  const remoteCursors = React.useMemo(
+    () => Array.from(cursors.values()).filter((c) => c.userId !== me?.id),
+    [cursors, me?.id]
   );
 
   const others = React.useMemo(
@@ -174,8 +210,10 @@ export function useCollab(procedureId: string | null) {
     releaseBlock,
     broadcastPatch,
     broadcastSaved,
+    broadcastCursor,
     lastPatch,
     savedBy,
     clearSavedBy: () => setSavedBy(null),
+    remoteCursors,
   };
 }
