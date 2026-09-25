@@ -16,6 +16,7 @@ interface AppState {
   // actions
   setView: (view: ViewKey) => void;
   openProcedure: (id: string) => void;
+  editProcedure: (id: string) => void;
   setCommandOpen: (open: boolean) => void;
   setNotificationsOpen: (open: boolean) => void;
   setMobileNavOpen: (open: boolean) => void;
@@ -36,6 +37,7 @@ export const useAppStore = create<AppState>((set) => ({
   searchQuery: "",
   setView: (view) => set({ view, mobileNavOpen: false }),
   openProcedure: (id) => set({ view: "procedure", selectedProcedureId: id, mobileNavOpen: false }),
+  editProcedure: (id) => set({ view: "editor", selectedProcedureId: id, mobileNavOpen: false }),
   setCommandOpen: (commandOpen) => set({ commandOpen }),
   setNotificationsOpen: (notificationsOpen) => set({ notificationsOpen }),
   setMobileNavOpen: (mobileNavOpen) => set({ mobileNavOpen }),

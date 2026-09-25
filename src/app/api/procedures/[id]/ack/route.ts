@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getCurrentUserId } from "@/lib/session";
+import { getTenantContext } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -8,15 +8,17 @@ export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { userId, tenantId } = ctx;
   const { id } = await params;
-  const userId = await getCurrentUserId();
 
   const procedure = await db.procedure.findUnique({ where: { id } });
-  if (!procedure) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!procedure || procedure.tenantId !== tenantId)
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (procedure.status !== "PUBLISHED")
     return NextResponse.json({ error: "Procedure is not published" }, { status: 400 });
 
-  // upsert acknowledgment for the current version
   const existing = await db.acknowledgment.findUnique({
     where: {
       userId_procedureId_version: {
@@ -34,6 +36,7 @@ export async function POST(
 
   await db.auditLog.create({
     data: {
+      tenantId,
       action: "ACK",
       entityType: "PROCEDURE",
       entityId: id,

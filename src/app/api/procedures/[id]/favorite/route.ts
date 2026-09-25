@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getCurrentUserId } from "@/lib/session";
+import { getTenantContext } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -8,8 +8,14 @@ export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { userId, tenantId } = ctx;
   const { id } = await params;
-  const userId = await getCurrentUserId();
+
+  const procedure = await db.procedure.findUnique({ where: { id } });
+  if (!procedure || procedure.tenantId !== tenantId)
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const existing = await db.favorite.findUnique({
     where: { userId_procedureId: { userId, procedureId: id } },
@@ -23,6 +29,7 @@ export async function POST(
   await db.favorite.create({ data: { userId, procedureId: id } });
   await db.auditLog.create({
     data: {
+      tenantId,
       action: "FAVORITE",
       entityType: "PROCEDURE",
       entityId: id,

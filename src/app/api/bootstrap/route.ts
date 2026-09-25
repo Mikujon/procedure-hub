@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { ensureSeed } from "@/lib/seed";
-import { getCurrentUser } from "@/lib/session";
+import { getTenantContext } from "@/lib/session";
 import {
   toDepartmentDTO,
   toAnnouncementDTO,
@@ -12,6 +12,7 @@ import type { StatsDTO, ProcedureStatus, Criticality } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  // Idempotent: safe to call before login so the DB is populated.
   try {
     await ensureSeed();
   } catch (e) {
@@ -22,30 +23,48 @@ export async function GET() {
     );
   }
 
-  const user = await getCurrentUser();
+  const ctx = await getTenantContext();
+  if (!ctx) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { userId, tenantId } = ctx;
+
+  const [tenant, user] = await Promise.all([
+    db.tenant.findUnique({ where: { id: tenantId } }),
+    db.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true, name: true, email: true, role: true, title: true,
+        avatarColor: true, departmentId: true, tenantId: true,
+      },
+    }),
+  ]);
 
   const [departments, announcements, auditLogs, procedures, favorites] =
     await Promise.all([
       db.department.findMany({
+        where: { tenantId },
         orderBy: { sortOrder: "asc" },
         include: { processes: { orderBy: { sortOrder: "asc" } } },
       }),
       db.announcement.findMany({
+        where: { tenantId },
         orderBy: [{ pinned: "desc" }, { createdAt: "desc" }],
         take: 5,
       }),
       db.auditLog.findMany({
+        where: { tenantId },
         take: 8,
         orderBy: { createdAt: "desc" },
         include: { user: true },
       }),
       db.procedure.findMany({
+        where: { tenantId },
         include: { _count: { select: { children: true } } },
       }),
-      db.favorite.count({ where: { userId: user.id } }),
+      db.favorite.count({ where: { userId } }),
     ]);
 
-  // Build department DTOs with counts
   const deptCounts = new Map<string, number>();
   for (const p of procedures) {
     deptCounts.set(p.departmentId, (deptCounts.get(p.departmentId) ?? 0) + 1);
@@ -68,7 +87,6 @@ export async function GET() {
     );
   });
 
-  // Stats
   const statusCounts: Record<string, number> = {};
   const critCounts: Record<string, number> = {};
   for (const p of procedures) {
@@ -76,12 +94,11 @@ export async function GET() {
     critCounts[p.criticality] = (critCounts[p.criticality] ?? 0) + 1;
   }
 
-  // pending acks for current user
   const publishedIds = procedures
     .filter((p) => p.status === "PUBLISHED" && p.ackRequired)
     .map((p) => p.id);
   const acked = await db.acknowledgment.findMany({
-    where: { userId: user.id, procedureId: { in: publishedIds } },
+    where: { userId, procedureId: { in: publishedIds } },
     select: { procedureId: true },
   });
   const ackedSet = new Set(acked.map((a) => a.procedureId));
@@ -126,7 +143,20 @@ export async function GET() {
   };
 
   return NextResponse.json({
-    user,
+    user: user
+      ? {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          title: user.title,
+          avatarColor: user.avatarColor,
+          departmentId: user.departmentId,
+        }
+      : null,
+    tenant: tenant
+      ? { id: tenant.id, name: tenant.name, slug: tenant.slug }
+      : null,
     departments: deptDTOs,
     announcements: announcements.map(toAnnouncementDTO),
     stats,

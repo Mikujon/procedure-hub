@@ -29,6 +29,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Building2 } from "lucide-react";
 
 const VIEW_TITLES: Record<string, string> = {
   dashboard: "Dashboard",
@@ -42,6 +43,8 @@ const VIEW_TITLES: Record<string, string> = {
 export function Topbar() {
   const { view, setCommandOpen, setMobileNavOpen, goHome } = useAppStore();
   const { data: notifData } = useNotifications();
+  const { data: boot } = useBootstrap();
+  const tenant = boot?.tenant;
   const unread = (notifData ?? []).filter((n: any) => !n.read).length;
 
   return (
@@ -71,6 +74,13 @@ export function Topbar() {
         <h1 className="font-display text-lg font-medium tracking-tight truncate">
           {VIEW_TITLES[view] ?? "Procedure Hub"}
         </h1>
+
+        {tenant && (
+          <span className="hidden md:inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+            <Building2 className="h-3 w-3" />
+            {tenant.name}
+          </span>
+        )}
       </div>
 
       <div className="flex-1" />

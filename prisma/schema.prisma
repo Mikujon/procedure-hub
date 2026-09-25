@@ -1,5 +1,5 @@
-// Procedure Hub — redesigned data model
-// SQLite-backed. Enums stored as String; tag lists stored as JSON string
+// Procedure Hub — redesigned data model (multi-tenant + auth)
+// SQLite-backed. Enums stored as String; tag/content lists stored as JSON string
 // (SQLite has no native array/list type per project rules).
 
 generator client {
@@ -11,10 +11,44 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Tenant {
+  id        String       @id @default(cuid())
+  name      String
+  slug      String       @unique
+  createdAt DateTime     @default(now())
+  users     User[]
+  departments Department[]
+  procedures Procedure[]
+  announcements Announcement[]
+}
+
+model User {
+  id            String         @id @default(cuid())
+  tenantId      String
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name          String
+  email         String         @unique
+  passwordHash  String
+  role          String         @default("VIEWER") // ADMIN | COMPLIANCE | OWNER | EDITOR | VIEWER
+  title         String?
+  avatarColor   String         @default("#c2410c")
+  departmentId  String?
+  department    Department?    @relation(fields: [departmentId], references: [id])
+  createdAt     DateTime       @default(now())
+
+  favorites     Favorite[]
+  acknowledgments Acknowledgment[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
+  ownedProcedures Procedure[]
+}
+
 model Department {
   id          String    @id @default(cuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name        String
-  slug        String    @unique
+  slug        String
   icon        String // lucide icon name
   color       String // hex hue used for accents/tints
   description String?
@@ -23,6 +57,8 @@ model Department {
   procedures  Procedure[]
   users       User[]
   createdAt   DateTime  @default(now())
+
+  @@unique([tenantId, slug])
 }
 
 model Process {
@@ -37,7 +73,9 @@ model Process {
 
 model Procedure {
   id            String         @id @default(cuid())
-  code          String         @unique // e.g. HR-PROC-001
+  tenantId      String
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  code          String
   title         String
   summary       String
   departmentId  String
@@ -65,24 +103,8 @@ model Procedure {
   favorites     Favorite[]
   acknowledgments Acknowledgment[]
   auditLogs     AuditLog[]
-}
 
-model User {
-  id            String         @id @default(cuid())
-  name          String
-  email         String         @unique
-  role          String         @default("VIEWER") // ADMIN | COMPLIANCE | OWNER | EDITOR | VIEWER
-  title         String?
-  avatarColor   String         @default("#c2410c")
-  departmentId  String?
-  department    Department?    @relation(fields: [departmentId], references: [id])
-  createdAt     DateTime       @default(now())
-
-  favorites     Favorite[]
-  acknowledgments Acknowledgment[]
-  notifications Notification[]
-  auditLogs     AuditLog[]
-  ownedProcedures Procedure[]
+  @@unique([tenantId, code])
 }
 
 model Favorite {
@@ -122,6 +144,7 @@ model Notification {
 
 model AuditLog {
   id          String    @id @default(cuid())
+  tenantId    String
   action      String    // CREATE | UPDATE | SUBMIT | APPROVE | REJECT | PUBLISH | ARCHIVE | ACK | FAVORITE
   entityType  String    // PROCEDURE | PROCESS | DEPARTMENT | USER
   entityId    String
@@ -135,6 +158,8 @@ model AuditLog {
 
 model Announcement {
   id          String    @id @default(cuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   title       String
   body        String
   variant     String    @default("info") // info | success | warning

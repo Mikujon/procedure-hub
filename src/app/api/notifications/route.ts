@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getCurrentUserId } from "@/lib/session";
+import { getTenantContext } from "@/lib/session";
 import { toNotificationDTO } from "@/lib/mappers";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const userId = await getCurrentUserId();
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { userId } = ctx;
   const notifications = await db.notification.findMany({
     where: { userId },
     orderBy: { createdAt: "desc" },

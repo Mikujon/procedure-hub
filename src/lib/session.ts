@@ -1,36 +1,31 @@
-import { db } from "@/lib/db";
-import type { UserDTO } from "@/lib/types";
-import { ROLE_LABELS } from "@/lib/domain";
+import { getServerSession } from "next-auth";
+import { authOptions, type AppSession } from "@/lib/auth";
 
-// Demo "session": no real auth. The current user is Elena Marchetti (OWNER).
-const CURRENT_USER_EMAIL = "elena.marchetti@procedurehub.io";
-
-let cached: { id: string; raw: any } | null = null;
-
-export async function getCurrentUserId(): Promise<string> {
-  if (cached) return cached.id;
-  const user = await db.user.findUnique({ where: { email: CURRENT_USER_EMAIL } });
-  if (!user) throw new Error("Current user not found — seed may have failed.");
-  cached = { id: user.id, raw: user };
-  return user.id;
-}
-
-export async function getCurrentUser(): Promise<UserDTO> {
-  const id = await getCurrentUserId();
-  const user = await db.user.findUnique({
-    where: { id },
-    include: { department: true },
-  });
-  if (!user) throw new Error("Current user not found.");
+/**
+ * Server-side: returns the current tenant context from the NextAuth session.
+ * Every API route that touches tenant data must call this and scope its
+ * Prisma queries by tenantId. Unauthenticated requests get a 401.
+ */
+export async function getTenantContext(): Promise<{
+  userId: string;
+  tenantId: string;
+  role: string;
+} | null> {
+  const session = (await getServerSession(authOptions)) as AppSession | null;
+  if (!session?.user?.tenantId) return null;
   return {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: user.role as UserDTO["role"],
-    title: user.title,
-    avatarColor: user.avatarColor,
-    departmentId: user.departmentId,
+    userId: session.user.id,
+    tenantId: session.user.tenantId,
+    role: session.user.role,
   };
 }
 
-export { ROLE_LABELS };
+/**
+ * Require a session. Returns the context or throws a 401-shaped error.
+ * Usage in route handlers:
+ *   const ctx = await requireTenant();
+ *   if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+ */
+export async function requireTenant() {
+  return getTenantContext();
+}

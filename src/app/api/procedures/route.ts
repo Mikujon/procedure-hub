@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { ensureSeed } from "@/lib/seed";
-import { getCurrentUserId } from "@/lib/session";
+import { getTenantContext } from "@/lib/session";
 import { toProcedureListItem } from "@/lib/mappers";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
-  await ensureSeed();
-  const userId = await getCurrentUserId();
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { userId, tenantId } = ctx;
+
   const url = new URL(req.url);
   const departmentId = url.searchParams.get("departmentId");
   const status = url.searchParams.get("status");
@@ -19,7 +20,7 @@ export async function GET(req: Request) {
   const ackPending = url.searchParams.get("ackPending") === "1";
   const sort = url.searchParams.get("sort") ?? "updated";
 
-  const where: any = {};
+  const where: any = { tenantId };
   if (departmentId) where.departmentId = departmentId;
   if (status) where.status = status;
   if (criticality) where.criticality = criticality;
@@ -39,7 +40,6 @@ export async function GET(req: Request) {
     orderBy: { updatedAt: "desc" },
   });
 
-  // client-side filters (search, favorite, ackPending)
   if (search) {
     procedures = procedures.filter(
       (p) =>
@@ -63,7 +63,6 @@ export async function GET(req: Request) {
     );
   }
 
-  // sorting
   switch (sort) {
     case "title":
       procedures.sort((a, b) => a.title.localeCompare(b.title));

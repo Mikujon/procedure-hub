@@ -7,9 +7,10 @@ import {
   CheckCircle2,
   Star,
   ShieldCheck,
-  ChevronRight,
   ScrollText,
+  LogOut,
 } from "lucide-react";
+import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
 import { useBootstrap } from "@/lib/hooks";
@@ -145,10 +146,7 @@ export function Sidebar() {
       {/* User card */}
       {user && (
         <div className="border-t border-sidebar-border p-2.5 shrink-0">
-          <button
-            onClick={() => setView("dashboard")}
-            className="flex w-full items-center gap-2.5 rounded-lg p-2 hover:bg-sidebar-accent/60 transition-colors text-left"
-          >
+          <div className="flex items-center gap-2.5 rounded-lg p-2">
             <UserAvatar name={user.name} color={user.avatarColor} size="sm" />
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-sidebar-foreground truncate leading-tight">
@@ -158,8 +156,14 @@ export function Sidebar() {
                 {ROLE_LABELS[user.role as keyof typeof ROLE_LABELS] ?? user.role}
               </p>
             </div>
-            <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
-          </button>
+            <button
+              onClick={() => signOut({ callbackUrl: "/" })}
+              title="Sign out"
+              className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       )}
     </aside>

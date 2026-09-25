@@ -16,6 +16,8 @@ import {
   FileWarning,
   Printer,
   Share2,
+  Pencil,
+  Sparkles,
   Loader2,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
@@ -26,6 +28,7 @@ import { WorkflowTimeline } from "@/components/procedure/workflow-timeline";
 import { StatusBadge, CriticalityBadge, TagPill } from "@/components/shared/badges";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { DynamicIcon } from "@/components/shared/dynamic-icon";
+import { AskPanel } from "@/components/procedure/ask-panel";
 import {
   formatDate,
   formatRelative,
@@ -36,11 +39,12 @@ import { cn } from "@/lib/utils";
 import type { ProcedureStatus } from "@/lib/types";
 
 export function ProcedureDetailView() {
-  const { selectedProcedureId, openProcedure, setView } = useAppStore();
+  const { selectedProcedureId, openProcedure, setView, editProcedure } = useAppStore();
   const { data: proc, isLoading } = useProcedure(selectedProcedureId);
   const ack = useAck(selectedProcedureId);
   const fav = useToggleFavorite(selectedProcedureId);
   const transition = useTransition(selectedProcedureId);
+  const [askOpen, setAskOpen] = React.useState(false);
 
   const onAck = () => {
     ack.mutate(undefined, {
@@ -86,6 +90,7 @@ export function ProcedureDetailView() {
   const overdue = reviewDays !== null && reviewDays < 0;
 
   return (
+    <>
     <div className="grid gap-8 lg:grid-cols-[1fr_300px]">
       {/* Main column */}
       <motion.div
@@ -164,6 +169,22 @@ export function ProcedureDetailView() {
                 </button>
               )
             )}
+
+            <button
+              onClick={() => editProcedure(proc.id)}
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-primary/5 px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/10"
+            >
+              <Pencil className="h-4 w-4" />
+              <span className="hidden sm:inline">Edit</span>
+            </button>
+
+            <button
+              onClick={() => setAskOpen(true)}
+              className="inline-flex items-center gap-2 rounded-lg border border-primary/30 bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-all hover:shadow-[var(--shadow-soft)] hover:brightness-105"
+            >
+              <Sparkles className="h-4 w-4" />
+              <span className="hidden sm:inline">Ask AI</span>
+            </button>
 
             <button
               onClick={onFav}
@@ -320,6 +341,13 @@ export function ProcedureDetailView() {
         )}
       </aside>
     </div>
+    <AskPanel
+      open={askOpen}
+      onOpenChange={setAskOpen}
+      procedureId={proc.id}
+      procedureCode={proc.code}
+    />
+    </>
   );
 }
 

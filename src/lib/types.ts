@@ -8,6 +8,7 @@ export type ViewKey =
   | "dashboard"
   | "library"
   | "procedure"
+  | "editor"
   | "approvals"
   | "admin"
   | "favorites";

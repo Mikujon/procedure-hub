@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useSession, signOut } from "next-auth/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useAppStore } from "@/lib/store";
 import { useBootstrap } from "@/lib/hooks";
@@ -14,10 +15,38 @@ import { ProcedureDetailView } from "@/components/views/procedure-detail-view";
 import { ApprovalsView } from "@/components/views/approvals-view";
 import { AdminView } from "@/components/views/admin-view";
 import { FavoritesView } from "@/components/views/favorites-view";
+import { EditView } from "@/components/views/edit-view";
+import { LoginView } from "@/components/views/login-view";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
-import { Loader2 } from "lucide-react";
+import { ScrollText, Loader2 } from "lucide-react";
 
 export function AppShell() {
+  const { status } = useSession();
+
+  if (status === "loading") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-[var(--shadow-soft)]">
+            <ScrollText className="h-6 w-6" />
+          </div>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading workspace…
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === "unauthenticated") {
+    return <LoginView />;
+  }
+
+  return <Workspace />;
+}
+
+function Workspace() {
   const { view, mobileNavOpen, setMobileNavOpen } = useAppStore();
   const { isLoading, isError } = useBootstrap();
 
@@ -27,7 +56,12 @@ export function AppShell() {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable))
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      )
         return;
       if (e.key === "g") {
         lastKey = "g";
@@ -72,9 +106,14 @@ export function AppShell() {
           <Topbar />
           <main className="flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-              {isError ? (
-                <ErrorState />
-              ) : isLoading && view === "dashboard" ? null : null}
+              {isError && (
+                <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">
+                    Couldn&apos;t load workspace data. Retrying…
+                  </p>
+                </div>
+              )}
               <AnimatePresence mode="wait">
                 <motion.div
                   key={view}
@@ -86,6 +125,7 @@ export function AppShell() {
                   {view === "dashboard" && <DashboardView />}
                   {view === "library" && <LibraryView />}
                   {view === "procedure" && <ProcedureDetailView />}
+                  {view === "editor" && <EditView />}
                   {view === "approvals" && <ApprovalsView />}
                   {view === "admin" && <AdminView />}
                   {view === "favorites" && <FavoritesView />}
@@ -98,17 +138,6 @@ export function AppShell() {
       </div>
 
       <CommandPalette />
-    </div>
-  );
-}
-
-function ErrorState() {
-  return (
-    <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
-      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      <p className="text-sm text-muted-foreground">
-        Couldn&apos;t load workspace data. Retrying…
-      </p>
     </div>
   );
 }

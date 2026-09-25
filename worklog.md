@@ -37,3 +37,41 @@ Work Log:
 
 Stage Summary:
 - Polish complete. Dev server running on port 3000 (pid 5592). App is production-ready for preview.
+
+---
+Task ID: 3
+Agent: main (Z.ai Code)
+Task: Add three features: multi-tenant with real authentication, Notion-style block editor, and AI Q&A on procedures.
+
+Work Log:
+PHASE 1 — Multi-tenant + auth:
+- Installed bcryptjs; added NEXTAUTH_SECRET/URL to .env.
+- Rewrote Prisma schema: added Tenant model + tenantId on Department/Procedure/User/Announcement/AuditLog, passwordHash on User, @@unique([tenantId, slug]) and @@unique([tenantId, code]). Reset DB + db:push.
+- NextAuth config (src/lib/auth.ts): Credentials provider, bcrypt.compare, jwt+session callbacks exposing tenantId/role/avatarColor. authorize() calls ensureSeed() so first login seeds the DB. Route handler at src/app/api/auth/[...nextauth]/route.ts.
+- session.ts → getTenantContext() (getServerSession); every API route now requires a session and scopes all Prisma queries by tenantId (bootstrap, procedures list/detail, ack, favorite, transition, notifications, audit). Cross-tenant direct access returns 404.
+- SessionProvider + ThemeProvider + QueryProvider nested in layout.tsx.
+- LoginView (client, rendered at / when unauthenticated): brand split-card, email/password, demo-account quick-fill (Atelier + Northwind), hard-reload on success.
+- AppShell gates: loading splash → LoginView (unauthenticated) → Workspace. Added tenant badge in topbar + sign-out button in sidebar user card. useBootstrap/useProcedures/etc now enabled only when authenticated.
+- Rewrote seed.ts: TWO tenants — Atelier Corp (6 depts, 8 users, 19 procedures) and Northwind Logistics (2 depts, 2 users, 3 procedures). Hashed passwords (password123). Auto-runs from authorize() and bootstrap.
+
+PHASE 2 — Block editor (Notion-style):
+- PATCH /api/procedures/[id]/content route: tenant-verified, saves content blocks + title/summary/tags/criticality/readMinutes, writes AuditLog.
+- BlockEditor component (src/components/editor/block-editor.tsx): controlled value/onChange, dnd-kit drag-reorder (grip handle, 6px activation so it doesn't fight text selection), per-type inline editors (heading w/ H1-H3 toggle, paragraph auto-textarea, callout variant+title+text, checklist with toggle/add/remove, steps numbered, quote+cite, code+language, editable table with add row/col, divider, definition). Insert menu (10 block types) via + handle on each row + bottom. Up/down + delete controls on hover.
+- EditView: sticky toolbar (Back/Preview/Save + unsaved indicator), editable title + summary, the BlockEditor, metadata sidebar (criticality, read time, tags w/ add/remove, tips). Hydrates from useProcedure, saves via useSaveContent with toast + cache invalidation.
+- "Edit" button added to procedure detail action bar; store.editProcedure(id) sets view="editor". AppShell renders <EditView/>.
+
+PHASE 3 — AI Q&A (grounded, with citations):
+- src/lib/ai/context.ts: serializeForContext() flattens blocks into numbered [n] citations; AI_SYSTEM_PROMPT enforces grounded answering + [n] citation format.
+- POST /api/ai/ask route (z-ai-web-dev-sdk, backend only): tenant-verified, loads procedure, builds context, calls zai.chat.completions.create with thinking disabled, extracts [n] citations from answer, returns {answer, citations}.
+- AskPanel (src/components/procedure/ask-panel.tsx): right-side Sheet slide-over, chat UI with user/assistant bubbles, suggestion chips, typing indicator, citation chips under answers, Enter-to-send, multi-turn history.
+- "Ask AI" button (sparkles) added to procedure detail; opens AskPanel scoped to that procedure.
+
+Verification (agent-browser + curl):
+- Auth: login screen → fill → submit → reload → dashboard. /api/bootstrap returns 401 without session, 200 with.
+- Multi-tenant isolation (curl, server-side): Elena sees 19 procs/6 depts (Atelier); Nora sees 3 procs/2 depts (Northwind: Warehouse Operations, Fleet & Transport); Nora accessing Elena's HR-PROC-001 → 404. Cross-tenant isolation enforced at the data layer.
+- Editor save persisted: the "qa-verified" tag added via the editor shows up in HR-PROC-001 tags on reload (['onboarding','lifecycle','iso-9001','qa-verified']); "Procedure saved" toast fired.
+- AI Q&A: asked "What are the key steps?" on HR-PROC-001 → grounded answer with [5] citation ("Send welcome email with first-day agenda, dress code, and parking info [5]"). Citations rendered as chips.
+- ESLint clean. Dev server running on port 3000.
+
+Stage Summary:
+- All three features live, end-to-end verified. Procedure Hub is now a multi-tenant workspace with real auth, a Notion-style block editor, and a grounded AI assistant — all on the single / route. Two demo tenants (password "password123" for all accounts): Atelier Corp (elena.marchetti@procedurehub.io) and Northwind Logistics (nora.lindqvist@northwind.io).
