@@ -97,7 +97,13 @@ function Workspace() {
                 </div>
               )}
               <AnimatePresence mode="wait">
-                <motion.div key={view} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
+                <motion.div
+                  key={view}
+                  initial={{ opacity: 0, x: 12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -8 }}
+                  transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+                >
                   {view === "dashboard" && <DashboardView />}
                   {view === "b7" && <B7View />}
                   {view === "document" && <KbDocumentView />}

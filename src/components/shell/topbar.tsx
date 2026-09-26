@@ -55,7 +55,7 @@ export function Topbar() {
   const unread = (notifData ?? []).filter((n: any) => !n.read).length;
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur-md supports-[backdrop-filter]:bg-background/60">
+    <header className="glass-bar sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border px-4">
       <Button
         variant="ghost"
         size="icon"

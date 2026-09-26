@@ -23,7 +23,7 @@ import {
   ArrowUp,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
-import { useProcedures, useBootstrap } from "@/lib/hooks";
+import { useKbSearch, useBootstrap } from "@/lib/hooks";
 import { useTheme } from "next-themes";
 import { StatusBadge } from "@/components/shared/badges";
 import { DynamicIcon } from "@/components/shared/dynamic-icon";
@@ -32,7 +32,7 @@ export function CommandPalette() {
   const { commandOpen, setCommandOpen, setView, openProcedure } = useAppStore();
   const [query, setQuery] = React.useState("");
   const { setTheme } = useTheme();
-  const { data: procedures } = useProcedures(query ? { q: query } : {});
+  const { data: kbData } = useKbSearch(query ? { q: query } : {});
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -47,13 +47,15 @@ export function CommandPalette() {
 
   const navItems = [
     { label: "Dashboard", view: "dashboard" as const, icon: LayoutDashboard },
-    { label: "Procedure Library", view: "library" as const, icon: Library },
-    { label: "Approvals Queue", view: "approvals" as const, icon: CheckCircle2 },
-    { label: "Favorites", view: "favorites" as const, icon: Star },
+    { label: "Le mie procedure", view: "b7" as const, icon: Library },
+    { label: "Coda Compliance", view: "compliance" as const, icon: CheckCircle2 },
+    { label: "Comunicazioni (HR-8)", view: "hr8" as const, icon: ShieldCheck },
+    { label: "Policy e versioni (LG-2)", view: "lg2" as const, icon: ShieldCheck },
+    { label: "Prese visione (LG-4)", view: "lg4" as const, icon: CheckCircle2 },
     { label: "Admin Console", view: "admin" as const, icon: ShieldCheck },
   ];
 
-  const results = (procedures ?? []).slice(0, 6);
+  const results = (kbData?.results ?? []).slice(0, 6);
 
   return (
     <CommandDialog
@@ -86,18 +88,14 @@ export function CommandPalette() {
                 }}
                 className="gap-3"
               >
-                <DynamicIcon
-                  name={p.departmentIcon}
-                  className="h-4 w-4 shrink-0"
-                  style={{ color: p.departmentColor }}
-                />
                 <div className="flex min-w-0 flex-1 items-center gap-2">
-                  <span className="font-mono text-[11px] text-muted-foreground">
-                    {p.code}
-                  </span>
+                  <span className="font-mono text-[11px] text-muted-foreground">{p.code}</span>
                   <span className="truncate">{p.title}</span>
+                  <span className="text-[10px] uppercase text-muted-foreground/60">{p.tipo}</span>
                 </div>
-                <StatusBadge status={p.status} size="sm" />
+                {p.obbligatorio && !p.acknowledged && (
+                  <span className="text-[10px] font-medium text-status-review">da leggere</span>
+                )}
                 <CornerDownLeft className="h-3.5 w-3.5 text-muted-foreground/50" />
               </CommandItem>
             ))}
