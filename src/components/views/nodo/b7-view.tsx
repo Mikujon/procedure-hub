@@ -12,6 +12,7 @@ import {
   BookOpen,
   Megaphone,
   ShieldCheck,
+  Plus,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useBootstrap, useKbSearch } from "@/lib/hooks";
@@ -29,8 +30,10 @@ const TIPO_META: Record<string, { label: string; icon: any; color: string }> = {
 };
 
 export function B7View() {
-  const { openProcedure } = useAppStore();
+  const { openProcedure, newDocument } = useAppStore();
   const { data: boot } = useBootstrap();
+  const role = boot?.user?.role ?? "VIEWER";
+  const canCreate = ["HR_HEAD", "LEGAL_HEAD", "ADMIN"].includes(role);
   const [q, setQ] = React.useState("");
   const [tipo, setTipo] = React.useState<string | null>(null);
   const [filter, setFilter] = React.useState<"all" | "toRead" | "read">("all");
@@ -60,11 +63,18 @@ export function B7View() {
       transition={{ duration: 0.4 }}
       className="space-y-6"
     >
-      <div>
-        <h1 className="font-display text-3xl font-medium tracking-tight">Le mie procedure</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Documenti destinati a te per ruolo, sede e posizione nell'organigramma.
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="font-display text-3xl font-medium tracking-tight">Le mie procedure</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Documenti destinati a te per ruolo, sede e posizione nell'organigramma.
+          </p>
+        </div>
+        {canCreate && (
+          <button onClick={newDocument} className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:brightness-105">
+            <Plus className="h-4 w-4" /> Nuovo documento
+          </button>
+        )}
       </div>
 
       {/* stats */}

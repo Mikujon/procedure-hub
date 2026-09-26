@@ -17,6 +17,7 @@ import { B7View } from "@/components/views/nodo/b7-view";
 import { KbDocumentView } from "@/components/views/nodo/kb-document-view";
 import { ComplianceQueueView, Lg2View, Hr8View, Lg4View } from "@/components/views/nodo/role-views";
 import { AdminView } from "@/components/views/admin-view";
+import { KbEditorView } from "@/components/views/nodo/kb-editor-view";
 
 export function AppShell() {
   const { status } = useSession();
@@ -105,6 +106,7 @@ function Workspace() {
                   {view === "lg2" && <Lg2View />}
                   {view === "lg4" && <Lg4View />}
                   {view === "admin" && <AdminView />}
+                  {view === "editor" && <KbEditorView />}
                 </motion.div>
               </AnimatePresence>
             </div>

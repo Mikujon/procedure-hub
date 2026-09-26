@@ -14,6 +14,7 @@ import {
   Users,
   Bell,
   FileText,
+  Pencil,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useKbDocument, useKbAck, useKbApprove, useKbReadStatus, useKbRemind } from "@/lib/hooks";
@@ -29,7 +30,7 @@ const TIPO_LABEL: Record<string, string> = {
 };
 
 export function KbDocumentView() {
-  const { selectedProcedureId } = useAppStore();
+  const { selectedProcedureId, editProcedure } = useAppStore();
   const { data: doc, isLoading } = useKbDocument(selectedProcedureId);
   const ack = useKbAck();
   const approve = useKbApprove();
@@ -117,6 +118,11 @@ export function KbDocumentView() {
 
           {/* action bar */}
           <div className="flex flex-wrap items-center gap-2 pt-1">
+            {doc.canEdit && (
+              <button onClick={() => editProcedure(doc.id)} className="inline-flex items-center gap-2 rounded-lg border border-border bg-primary/5 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/10">
+                <Pencil className="h-4 w-4" /><span className="hidden sm:inline">Modifica</span>
+              </button>
+            )}
             {doc.canAck && doc.currentVersion && (
               doc.acknowledged ? (
                 <span className="inline-flex items-center gap-2 rounded-lg border border-status-published/30 bg-status-published/10 px-4 py-2 text-sm font-medium text-status-published">
