@@ -131,6 +131,758 @@ prisma/seed.ts                  dati demo (dipartimenti, utenti, ruoli, una proc
 del codice/UI reali — la cronologia sotto mostra quanto spesso questo file
 si è disallineato in passato.*
 
+**17 set 2026 (2)**: l'audit di governance sotto (voce precedente,
+stesso giorno) è stato **rifatto** appena scoperto che il kit aveva
+pubblicato nel frattempo `v1.4.0` — che aggiunge `AI_PROJECT_AUDIT.md`,
+il file dedicato ad auditare uno strumento **già esistente** (diverso da
+`AI_INTAKE_ASSESSMENT.md`, usato ieri, pensato per un progetto nuovo).
+Le prove raccolte restano identiche (nessun codice è cambiato tra i due
+tentativi, e il checklist a 42 punti stesso non è cambiato tra
+`v1.3.1`/`v1.4.0` del kit — solo il processo di audit) — quello che
+cambia è l'esito formale: `AI_PROJECT_AUDIT.md` §6 impone di **fermarsi
+ed escalare al Consiglio di Governance** quando un gate item T3 fallisce
+(approvazione security, penetration test, policy di retention, o qui
+la valutazione prompt-injection), *prima* di poter marcare un progetto
+"Parziale" — il primo tentativo aveva scritto "Partial — remediation
+required" senza applicare questa regola, perché non aveva ancora letto
+il file giusto. Con tre gate item su tre falliti (nessuna valutazione
+prompt-injection scritta per `/ask`, nessun penetration test, nessuna
+approvazione security registrata), l'esito corretto è **"Non conforme —
+escalation al Consiglio"**, indirizzata di fatto al solo Chair (l'unico
+seat oggi nominato in `GOVERNANCE.md`, che fa da default per il seat
+Security ancora `TBD`).
+
+Nuovi file al posto del precedente `docs/AI-GOVERNANCE-AUDIT.md` (ora
+rinominato `docs/AI-GOVERNANCE-AUDIT-EVIDENCE.md`, mantenuto come
+evidenza dettagliata riga per riga): `AUDIT_2026-09-17.md` (il documento
+ufficiale, nel formato a template richiesto da `AI_PROJECT_AUDIT.md`
+§3 — data, tier, esito, priorità) e `REMEDIATION_2026-09-17.md` (§5 del
+file istruzioni: un secondo file separato, solo i punti in Fail come
+checklist spuntabile, con i due punti realmente bloccanti — owner
+mancante e la tripla escalation — marcati esplicitamente come "non
+risolvibile da codice", per non lasciar credere che un assistente AI
+possa chiuderli da solo). `PROJECT.md` aggiornato di conseguenza.
+
+**17 set 2026**: primo audit di governance AI di Procedure Hub contro
+`wearefiber/ai-governance-kit` (v1.3.1) — non una feature del prodotto,
+ma classificazione e audit del progetto stesso su richiesta esplicita
+dell'utente. Interview di classificazione (`AI_INTAKE_ASSESSMENT.md`):
+7 delle 10 domande rispondibili con prove dirette dal codice/cronologia
+(dati GDPR/PII reali — procedura demo "Gestione richieste GDPR DSAR" —,
+audit trail obbligatorio, più danno reale già dimostrato: i bug RBAC
+storici trovati e corretti in questa stessa serie di sessioni), che
+blocca il tier a **T3 — Critico/Regolamentato** indipendentemente dal
+resto. Owner (business/technical) chiesto esplicitamente ma non
+fornito — registrato come gap aperto in `PROJECT.md` (nuovo file, il
+blocco di classificazione richiesto dal kit) invece di essere inventato.
+
+Poi l'audit vero e proprio: tutti i 42 punti di
+`reference/AI_Development_Standard.docx` §7 verificati uno per uno
+contro il codice reale (non assunti) — risultato in
+`docs/AI-GOVERNANCE-AUDIT.md`. **2 Pass, 9 Partial, 24 Fail, 7 N/A**
+(dipendenti da un Hub di governance aziendale che non esiste ancora).
+Il Pass più forte: l'aggiornamento di `CLAUDE.md` ad ogni sessione è
+esattamente lo spirito del requisito #24 ("il technical owner aggiorna
+la documentazione a ogni modifica rilevante"). Il Fail più concreto e
+più a buon mercato da chiudere: **43 vulnerabilità reali nelle
+dipendenze** (`npm audit`, 1 critical + 2 high) — mai eseguito prima,
+nessuna pipeline CI esiste (`.github/workflows/` assente) a farlo
+automaticamente. Altri gap reali trovati non prima documentati: nessuna
+valutazione scritta del rischio prompt-injection per `/ask` (il
+contenuto che entra nel prompt è scritto da editor interni, non solo da
+admin fidati); `lib/ai/client.ts` usa un alias di modello
+(`gemini-flash-latest`) non pinnato e non logga token/latenza/versione
+per chiamata; nessun diagramma architetturale reale (solo narrativa);
+nessun runbook/on-call; nessuna policy di retention/deletion dati
+formalizzata (il backup/restore è testato dal vivo, ma non schedulato
+né con una retention definita, per scelta esplicita già documentata in
+`docs/BACKUP-RESTORE.md` in attesa di sapere dove girerà la produzione).
+Non "non conforme" per negligenza — un progetto con audit trail solido,
+RBAC a due livelli, 155 test reali e una disciplina di documentazione
+sopra la media, costruito prima che questo kit esistesse in azienda —
+ma la maggioranza dei 42 item resta comunque da chiudere contro il
+metro di misura formale del kit. Dettagli, motivazioni e le tre
+remediation più a buon mercato (npm audit fix, una pipeline CI minima,
+l'analisi scritta prompt-injection) in `docs/AI-GOVERNANCE-AUDIT.md`.
+
+**16 set 2026**: chiuso un secondo gap reale, di nuovo con gli item #1-3
+della roadmap ancora bloccati sulle stesse credenziali esterne di
+sempre — stavolta l'audit trail sull'export di una procedura, segnalato
+ma lasciato fuori scope quando SharePoint sync è stato costruito (voce
+del 2 set 2026: "nemmeno il bottone Esporta manuale la scrive, una
+lacuna pre-esistente notata ma non corretta qui, fuori scope").
+`syncProcedureToSharePoint` scriveva già un `AuditLog` con
+`action: EXPORT` per la propria copia PDF, ma **due** download manuali
+dello stesso genere di contenuto non lo facevano affatto:
+`GET /api/procedures/[id]/export` (download diretto PDF/DOCX/XLSX) e
+`GET /api/procedures/[id]/ack-certificate` (il certificato di
+conformità Read & Acknowledge — quest'ultimo mai segnalato prima,
+trovato riguardando l'area). La regola architetturale 2 ("ogni azione
+che cambia stato scrive un AuditLog") non li copre in senso stretto —
+un download non cambia nulla — ma tracciare chi ha scaricato cosa è
+esattamente ciò che un audit trail ISO/GDPR/SOC2 richiede, e il
+certificato ACK in particolare è già di per sé un documento di
+conformità.
+
+Estratto `src/lib/audit.ts` (`logProcedureExport()`) invece di
+duplicare per la terza volta lo stesso `prisma.auditLog.create()` —
+usato ora da tutti e tre i punti (le due route più
+`sharepoint-sync.ts`, che prima lo scriveva inline). 2 nuovi test
+(`tests/audit.test.ts`, 155 totali): riga scritta con tenant/attore/
+procedura corretti, chiamate multiple indipendenti non si sovrascrivono
+a vicenda. **Verificato anche dal vivo** contro Postgres reale e il
+tenant demo: procedura pubblicata reale (`LEG-PRO-001`), conteggio
+`AuditLog` a zero prima, `GET .../export?format=pdf` reale via `curl`
+autenticato come `admin@demo.com` → una riga `EXPORT` con `fileName`
+corretto nei metadata; una `AckCampaign` di scarto completata inserita
+direttamente (bypassando il flusso reale di conferma, non necessario
+per isolare questa verifica) → `GET .../ack-certificate` reale → una
+seconda riga distinta con `kind: "ack-certificate"` e il `campaignId`
+nei metadata. `npx tsc --noEmit` pulito, `npm test` 155/155. Dati di
+scarto (le due righe `AuditLog`, la `AckCampaign`) rimossi.
+
+**15 set 2026**: `/admin/integrations` — chiuso un gap reale nel
+mascheramento segreti trovato riguardando `sanitize.ts` appena spedito
+(voce del 9 set 2026 sotto), con gli item #1-3 della roadmap ancora
+bloccati sulle stesse credenziali esterne reali di sempre: nessun nuovo
+lavoro possibile lì, quindi rivisto invece quello appena costruito.
+`sanitizeIntegrationConfig()` maschera solo le chiavi che matchano
+`token|secret|key|password` per nome — `webhookUrl` (Slack/Google
+Chat/Teams: chi lo possiede può pubblicare nel canale, nessun'altra
+autenticazione richiesta) e `serviceAccountJson` (Google Chat: una
+service account key Workspace intera, chiave privata RSA inclusa) non
+matchano quel pattern per nome e finivano quindi serializzati in chiaro
+nel payload RSC della pagina **e** mostrati in campi di testo semplice
+(non `type="password"`) nel form appena costruito. `webhookUrl` era
+un'incoerenza già segnalata (changelog 25 ago 2026 (2)) ma
+esplicitamente fuori scope per quel lavoro (header `Authorization` di
+`SEND_WEBHOOK`); `serviceAccountJson` non era mai stato documentato.
+Entrambi ora squarely in scope, essendo la pagina che li mostra.
+
+Corretto con un elenco esplicito di nomi di campo (`EXPLICIT_SECRET_FIELDS`,
+non un regex più largo — `siteId`/`drivePath`/`googleWorkspaceDomain` non
+sono segreti e un pattern tipo "webhook" rischierebbe di beccare un futuro
+campo non segreto con nome simile), usato in `isSecretField()` assieme al
+pattern esistente. `mergeIntegrationConfig()` non ha richiesto modifiche:
+tratta già qualunque campo il cui valore in arrivo sia il placeholder
+mascherato come "invariato", indipendentemente dal nome — funziona per i
+due campi nuovi automaticamente. Anche i tre input `webhookUrl` del
+pannello (Slack, Google Chat, Teams) passati a `type="password"`, per
+coerenza con `botToken`/`signingSecret`/`clientSecret` già così (evita
+anche l'esposizione a spalla/screen-share mentre l'admin digita un nuovo
+valore — `serviceAccountJson` resta una `<textarea>`, che non ha un
+equivalente nativo di `type="password"`, stessa limitazione HTML di
+qualunque campo multilinea).
+
+5 nuovi test in `tests/integrations-sanitize.test.ts` (13 totali):
+mascheramento dei due campi nuovi, campi genuinamente non segreti
+(`siteId`/`drivePath`/`googleWorkspaceDomain`/`azureTenantId`/`clientId`)
+che restano visibili, round-trip completo sanitize→invariato nel
+form→merge per entrambi. **Verificato anche dal vivo** contro Postgres
+reale: `POST` con un vero webhook Slack e un vero JSON service account
+di scarto → risposta di salvataggio mascherata su entrambi; query diretta
+al DB conferma i valori reali salvati intatti (non corrotti dal
+mascheramento); `GET` successivo mascherato; un secondo salvataggio con
+i placeholder preserva esattamente il valore reale; HTML della pagina
+`/admin/integrations` resa dal vivo ispezionato con `grep` — né il
+webhook reale né la chiave privata reale compaiono in nessun punto del
+payload, solo il placeholder. Screenshot Playwright conferma i campi
+webhook ora `type="password"` nel form reso. `npx tsc --noEmit` pulito,
+`npm test` 153/153. Dati di scarto (le due righe `Integration` di test)
+rimossi, confermato via query diretta.
+
+**9 set 2026 (2)**: pagina admin `/admin/integrations` — prima non
+esisteva alcuna UI reale per configurare Slack/Google Chat/Microsoft
+Teams/SharePoint, solo `GET/POST /api/admin/integrations` chiamabile a
+mano; `/admin/settings` prometteva un link "Integrazioni & notifiche" che
+in realtà puntava alla dashboard KPI (`/admin`, nessuna sezione
+integrazioni) — un buco già segnalato nel changelog del 25 ago 2026 ma
+mai corretto perché fuori scope per quell'item. Emerso di nuovo in questa
+sessione spiegando all'utente perché gli item #1-3 della roadmap restano
+bloccati: si aspettava, ragionevolmente, che l'admin della propria
+azienda potesse inserire le credenziali reali (webhook Slack, service
+account Google, ecc.) da una sezione "Integrazioni" dell'app — non
+un'API grezza.
+
+Nuova pagina server-gated `ADMIN` (`src/app/(app)/admin/integrations/page.tsx`)
++ client component `src/components/settings/integrations-panel.tsx` con
+una scheda per ciascuno dei quattro tipi che hanno davvero un adapter
+dedicato (Slack, Google Chat, Microsoft Teams, SharePoint — vedi voci di
+changelog precedenti per ciascuno). **Deliberatamente esclusi**: Jira/
+ServiceNow/Freshdesk (si collegano già tramite una regola `SEND_WEBHOOK`
+in `/admin/automations`, non un `Integration` di tipo dedicato — vedi
+Traccia 3.3, 21/25 ago 2026) ed Entra ID/SSO (variabili d'ambiente a
+livello di deployment lette da `lib/auth.ts`, non una riga `Integration`
+per tenant) — entrambi spiegati direttamente nella pagina invece di
+comparire come schede vuote e fuorvianti.
+
+**Due bug reali corretti nella route esistente**, non solo aggiunta di
+UI sopra: `POST /api/admin/integrations` faceva un replace integrale di
+`config` invece di un merge — dato che il form pre-compila i campi
+segreto con il placeholder mascherato restituito dalla `GET` (non ha mai
+il valore vero da mostrare), salvare senza toccare un campo segreto
+l'avrebbe sovrascritto con la stringa mascherata letterale, cancellando
+il token reale; e la stessa route restituiva `config` grezzo, non
+mascherato, nella risposta del salvataggio — la `GET` mascherava, la
+`POST` no. Nuovo `src/lib/integrations/sanitize.ts`:
+`sanitizeIntegrationConfig()` (maschera ogni chiave che matcha
+`token|secret|key|password`, case-insensitive, usato ora sia da `GET`
+sia da `POST`) e `mergeIntegrationConfig()` (legge la riga esistente,
+applica solo i campi genuinamente diversi, tratta un valore in arrivo
+uguale al placeholder come "nessuna modifica, mantieni quello
+salvato" — una stringa vuota esplicita resta invece una cancellazione
+deliberata, distinta dal placeholder). Il mascheramento avviene lato
+server component prima di passare i dati al client component: qualunque
+prop passata da un Server Component a un Client Component finisce
+serializzata nel payload RSC della pagina inviato al browser, quindi
+mascherare solo nella resa visiva del client non sarebbe bastato.
+
+Corretti anche i due link rotti su `/admin/settings` (statistica
+"Integrazioni attive" e riquadro "Integrazioni & notifiche", entrambi
+puntavano a `/admin`) verso `/admin/integrations`. Nessuna nuova voce in
+sidebar/command palette — stesso pattern "hub and spoke" già usato per
+`/admin/automations` (raggiungibile solo da `/admin/settings`, non un
+livello di navigazione a sé).
+
+8 nuovi test (`tests/integrations-sanitize.test.ts`): mascheramento
+case-insensitive, config nulla/assente, overwrite di un campo
+genuinamente nuovo, preservazione del segreto quando il valore in arrivo
+è il placeholder, cancellazione esplicita con stringa vuota,
+preservazione dei campi non toccati da un cambio di `mode` (es. bot →
+webhook non cancella i campi del bot), primo salvataggio senza config
+preesistente, e un round-trip completo che simula il flusso reale
+("admin salva senza modificare alcun segreto" → sanitize → invariato nel
+form → merge → risultato identico all'originale). **Verificato anche dal
+vivo** contro Postgres reale via `curl` autenticato come
+`admin@demo.com`: risposta di salvataggio con segreti mascherati,
+un secondo salvataggio con i placeholder mascherati preserva esattamente
+il segreto reale già salvato, un cambio di modalità Slack bot→webhook
+preserva in storage i campi della modalità bot ormai inutilizzata invece
+di cancellarli. Redirect `307` confermato per un non-admin
+(`viewer@demo.com`) verso `/dashboard`. Screenshot Playwright della
+pagina reale (login vero, navigazione, attesa del testo "SharePoint")
+conferma le quattro schede rese correttamente nell'identità visiva
+Control Room, nessuna rottura di layout. `npx tsc --noEmit` pulito,
+`npm test` 150/150. Dati di scarto (una riga `Integration` di test)
+rimossi, confermato via query di conteggio successiva.
+
+**9 set 2026**: Roadmap #4 — `lib/review-reminders.ts` e
+`scripts/send-ack-reminders.ts` migrati sul motore di automazioni,
+**su richiesta esplicita di procedere subito**: la voce era stata
+deliberatamente rimandata il 19 ago 2026 finché il motore non avesse
+girato "un ciclo di produzione senza incidenti" — un criterio che questo
+sandbox, senza traffico di produzione reale, non può mai soddisfare da
+solo; a chi ha chiesto come procedere sono state offerte alternative
+(aspettare credenziali reali per gli item #1-3, un audit più ampio,
+altro) e la scelta di procedere comunque con #4 è stata dell'utente, non
+un giudizio autonomo di Claude che ha sovrascritto il rimando.
+
+**Il problema reale del "migrare"**: questi due percorsi non erano mai
+stati configurabili da admin — ogni tenant li otteneva automaticamente,
+zero `AutomationRule` da creare. Spegnere il codice vecchio e dire
+"createvi la regola equivalente" avrebbe fatto sparire in silenzio i
+promemoria di revisione e l'escalation Read & Acknowledge per ogni
+tenant che non lo fa proattivamente — esattamente il rischio di
+compliance per cui il rimando esisteva. Soluzione: nuovo
+`lib/automations/defaults.ts` (`ensureDefaultAutomationRules`) crea
+quattro regole predefinite per tenant se non esiste già l'equivalente
+(stesso trigger/azione, e per le tre `ACK_CAMPAIGN_AGE` anche stesso
+`days` — non un nome, un admin che rinomina una regola non deve farne
+comparire una seconda al prossimo giro) — chiamato da
+`scripts/ensure-default-automations.ts` (backfill, idempotente, non
+c'è un flusso self-service di creazione tenant in questo codebase da
+agganciare automaticamente) e ora anche da `prisma/seed.ts`, così un
+ambiente nuovo parte già corretto. Il comportamento pre-esistente resta
+identico zero-configurazione, ma ora è una vera `AutomationRule`
+visibile/disattivabile/modificabile in `/admin/automations` — mai stato
+possibile prima.
+
+**Le quattro regole**: `REVIEW_DATE_DUE` → `SEND_NOTIFICATION`
+(destinatario `OWNER`, replica `sendReviewReminders()`); tre
+`ACK_CAMPAIGN_AGE` a 3/7/14 giorni. A 3 e 7 giorni →
+`SEND_NOTIFICATION` con un destinatario nuovo, `ACK_OUTSTANDING` (solo
+chi non ha ancora confermato — prima irraggiungibile dall'azione
+generica, che sapeva solo risolvere proprietario/dipartimento/tenant) —
+7 giorni con fan-out esterno (Slack/Google Chat/Teams), 3 giorni solo
+in-app, stessa distinzione dello script originale, resa possibile da un
+nuovo `externalChannels` opzionale su `SendNotificationConfig` (prima
+sempre `true`, senza modo di scegliere). A 14 giorni → nuovo
+`AutomationActionType.ESCALATE_ACK_TO_MANAGERS` (nuova migration): non
+esprimibile come `SEND_NOTIFICATION`, che risolve *un* insieme di
+destinatari e manda *un* messaggio — questo raggruppa chi non ha ancora
+confermato per il proprio manager (fallback: proprietario della
+procedura) e manda un messaggio distinto a ciascun manager, una forma
+di azione diversa, non solo un destinatario diverso. Permesso dalla
+regola architetturale 7 (che blocca solo un'azione generica "avanza/
+pubblica stato", non nuove azioni di notifica).
+
+**Bug reale trovato ricostruendo `runAckCampaignAgeRule` per
+agganciarci questo lavoro, non introdotto da esso**: il suo `fireKey`
+era `String(days)` — una stringa costante per ogni esecuzione della
+stessa regola, indipendente da *quale* campagna. Con
+`@@unique([ruleId, entityId, fireKey])` e `entityId` = id procedura,
+questo significava che una regola poteva scattare **una sola volta per
+procedura, per sempre**: una volta che una prima `AckCampaign` per la
+procedura X avesse fatto scattare la regola "14 giorni", **nessuna**
+`AckCampaign` futura per quella stessa procedura (es. dopo una
+ripubblicazione che richiede una nuova conferma) avrebbe mai potuto
+farla scattare di nuovo. Corretto: `fireKey` ed `entityId` ora sono
+l'id della campagna stessa, non la procedura — ogni campagna ha il
+proprio slot di dedup, una nuova campagna per la stessa procedura parte
+pulita. Toccata anche una lacuna adiacente: `runAckCampaignAgeRule` non
+calcolava affatto chi fosse ancora "outstanding" (mancante la
+conferma) — lo fa ora, escludendo chi ha già confermato, e salta del
+tutto lo scatto se non resta nessuno (difensivo: `maybeCompleteCampaign`
+dovrebbe già aver chiuso quella campagna).
+
+**Nuovo**: placeholder `{{procedureTitle}}` in titolo/messaggio di
+`SEND_NOTIFICATION` — sostituzione di stringa, non un motore di
+template. Prima di questo, ogni regola `SEND_NOTIFICATION` mandava un
+titolo fisso identico per ogni procedura che la faceva scattare, bene
+per una regola-annuncio isolata (es. "Avvisa il DPO quando serve
+approvazione compliance", un solo evento, l'utente apre e vede i
+dettagli) ma non per un promemoria ricorrente su *molte* procedure
+diverse, dove titoli indistinguibili nell'elenco notifiche vanificano
+lo scopo — esattamente il caso dei promemoria di revisione/ACK appena
+migrati, che prima avevano un titolo dinamico costruito a mano
+(`"${title}" è in scadenza...`) e lo avrebbero perso migrando
+sull'azione generica senza questo. `AckReminder` (stage DAY_3/7/14) non
+viene più scritto da questo percorso — `AutomationRun` (già visibile
+nello storico esecuzioni di `/admin/automations`, Traccia 3.1) è ora
+la fonte di verità su cosa è scattato quando; `AckReminderStage` con
+solo `INITIAL` resta in uso (scritto da `lib/ack.ts`, non toccato).
+
+`vercel.json`: rimossa la voce cron dedicata (`/api/cron/review-reminders`,
+giornaliera) — `/api/cron/automations` (oraria, già esistente) ora è
+l'unico cron time-based, comprese le quattro regole predefinite.
+`scripts/dev-cron.ts` semplificato di conseguenza.
+
+21 nuovi test (`tests/automations-ack-migration.test.ts`): il fix del
+bug `fireKey` (due campagne separate sulla stessa procedura scattano
+entrambe in modo indipendente), skip quando nessuno è più outstanding,
+risoluzione `ACK_OUTSTANDING` (incluso lo skip silenzioso — nessuna
+eccezione, nessun destinatario — se una regola viene configurata per
+sbaglio su un trigger diverso da `ACK_CAMPAIGN_AGE`), il placeholder
+`{{procedureTitle}}`, `ESCALATE_ACK_TO_MANAGERS` (raggruppamento per
+manager e fallback a proprietario), e `ensureDefaultAutomationRules`
+(crea le quattro al primo giro, no-op al secondo, non duplica una
+regola equivalente già esistente con nome diverso, distingue le tre
+regole `ACK_CAMPAIGN_AGE` per `days` e non solo per trigger/azione).
+Una particolarità trovata scrivendo questi test, non nel codice sotto
+test: `runTimeBasedAutomations()` scansiona ogni regola abilitata
+dell'intero tenant, quindi condividere un tenant fisso tra più test che
+creano ciascuno una propria regola "days=3" fa scattare *tutte* quelle
+regole sulla stessa campagna, moltiplicando le notifiche attese — non
+un bug del motore (un admin che crea davvero due regole identiche
+vedrebbe lo stesso comportamento, corretto), ma un problema di
+isolamento tra test, risolto dando a ogni test in questo file un
+proprio tenant di scarto invece di condividerne uno con `beforeAll`.
+
+**Verificato dal vivo** oltre ai test, contro il tenant demo reale:
+`scripts/ensure-default-automations.ts` ha creato le quattro regole
+(verificato idempotente su un secondo giro, e su un terzo giro dentro
+`npm run db:seed` risemminato), poi una procedura di scarto pubblicata
+con `nextReviewDate` nel passato più una `AckCampaign` di scarto aperta
+20 giorni fa (destinatari `viewer@demo.com` — con manager impostato
+temporaneamente su `editor@demo.com` — ed `editor@demo.com`, senza
+manager) sottoposte a un vero `GET /api/cron/automations`: tutte e
+quattro le regole hanno scattato con `status: SUCCESS`, le notifiche
+reali create hanno il titolo templato correttamente
+(`"..." è in scadenza di revisione`), i promemoria a 3/7 giorni sono
+arrivati a entrambi gli outstanding, e l'escalation a 14 giorni ha
+prodotto esattamente due messaggi distinti — uno a `editor@demo.com`
+("Vittorio Viewer" nel corpo, il suo riporto) e uno ad `admin@demo.com`
+(proprietario della procedura, fallback per `editor@demo.com` che non
+ha un manager) — non uno generico a tutti. Un secondo giro dello stesso
+endpoint ha rieseguito le quattro regole senza creare notifiche
+duplicate (dedup reale via `AutomationRun`, non solo nei test). `npx
+tsc --noEmit` pulito, `npm test` 142/142. Dati di scarto rimossi
+(procedura, campagna, notifiche generate durante la verifica,
+`managerId` temporaneo ripristinato a `null`) — le quattro regole
+predefinite sul tenant demo restano, per scelta: non sono dati di
+scarto, sono il comportamento di produzione atteso da qui in avanti.
+
+**2 set 2026**: Roadmap #5 — integrazione SharePoint, l'ultimo dei
+cinque provider rimasti e l'unico per cui serviva davvero un disegno
+proprio (non un canale di notifica come Slack/Teams/Google Chat, non
+sbloccabile con il webhook generico come Jira/ServiceNow/Freshdesk): è
+storage documentale via Microsoft Graph, con un flusso OAuth2 diverso da
+tutti gli altri. Nuovo `Integration.type = SHAREPOINT`, `config = {
+azureTenantId, clientId, clientSecret, siteId, drivePath }` — una
+seconda app registration Azure AD, distinta da quella SSO già esistente
+in `lib/auth.ts` (`AZURE_AD_CLIENT_ID`/ecc., permessi delegati,
+un'app per l'intero deployment): questa serve il permesso applicativo
+`Sites.ReadWrite.All` con consenso admin, configurata per-tenant come
+Slack/Google Chat/Teams già sono. `lib/integrations/sharepoint-auth.ts`:
+OAuth2 client-credentials verso l'endpoint token di Azure AD (stesso
+pattern RFC-standard di `google-auth.ts`, solo grant type diverso).
+`lib/integrations/sharepoint.ts`: `PUT` diretto su
+`/sites/{siteId}/drive/root:/{path}:/content` (upload semplice, fino a
+4MB — sufficiente per qualunque export PDF di una procedura; sopra
+quella soglia Graph richiede una upload session a chunk, non
+implementata, nessun export si è mai avvicinato a quella dimensione).
+`lib/sharepoint-sync.ts` orchestra il tutto dietro un'unica funzione
+testabile: richiede `canEditProcedure` (stessa soglia di autorità di un
+allegato, non una semplice visualizzazione), sincronizza solo contenuto
+già `PUBLISHED` (stessa regola di `syncSearchIndex` per MeiliSearch,
+applicata a un secondo sistema esterno), genera il PDF con lo stesso
+`generateProcedurePdf` dell'export manuale, e scrive un `AuditLog` con
+`action: EXPORT` (mai usata finora in questo codebase — nemmeno il
+bottone "Esporta" manuale la scrive, una lacuna pre-esistente notata ma
+non corretta qui, fuori scope). Bottone "SharePoint" sulla pagina
+procedura (`sharepoint-sync-button.tsx`), visibile solo se procedura
+pubblicata, utente con diritti di modifica, e integrazione abilitata per
+il tenant. **Bug reale trovato scrivendo la verifica dal vivo**: la
+route `POST .../sync-sharepoint` non aveva alcun try/catch attorno alla
+chiamata reale a Graph — un fallimento del token exchange o dell'upload
+sarebbe propagato come eccezione non gestita fino a un 500 generico di
+Next.js, senza messaggio utile per il toast del bottone (a differenza di
+`executeSendWebhook`, che rilancia deliberatamente l'errore ma lo fa
+dentro un motore che lo cattura già a un livello più alto, in
+`AutomationRun.error`— qui non c'era un livello più alto ad
+intercettarlo). Corretto avvolgendo la chiamata nella route con un
+try/catch che restituisce un JSON pulito con `status: 502`. 15 nuovi
+test (`tests/sharepoint.test.ts`, `tests/sharepoint-sync.test.ts` —
+`fetch` mockato per l'adapter Graph, DB reale per permessi/stato/PDF).
+**Verificato anche dal vivo in modo insolitamente concreto per
+un'integrazione non completabile in questo sandbox**: `login.microsoftonline.com`
+si è rivelato raggiungibile attraverso il proxy di questo ambiente (a
+differenza di, ad esempio, `dl.min.io` per MinIO) — una regola creata
+con credenziali finte ma sintatticamente plausibili ha prodotto due
+risposte reali e diverse da Azure AD (`AADSTS900021` per un GUID tenant
+non valido, `AADSTS53003` per una Conditional Access policy su un tenant
+Microsoft reale e noto pubblicamente), entrambe propagate correttamente
+come 502 con messaggio leggibile — non solo un mock locale come per
+Teams, ma il servizio Microsoft reale, anche se senza un'app
+registration reale non si può arrivare a un upload riuscito. Verificato
+anche il percorso di permessi puro (`no_content` su una procedura DRAFT,
+`forbidden` per `viewer@demo.com`, `not_configured` senza
+integrazione), che non tocca Graph affatto. `npx tsc --noEmit` pulito,
+`npm test` 132/132. Dati di scarto rimossi (procedura, integrazione —
+la `DELETE` procedura con lo stesso 500 innocuo di MeiliSearch non
+raggiungibile già documentato altrove).
+
+**25 ago 2026 (5)**: Roadmap #6 — Playwright introdotto (ultimo pezzo
+mancante dell'item), `e2e/` con 7 test su 3 file (`login.spec.ts`,
+`search-visibility.spec.ts`, `dashboard-visibility.spec.ts`), fixture
+dedicata (`e2e/helpers/fixtures.ts`, tenant di scarto isolato con utenti
+con password reali — separata da `tests/helpers/test-tenant.ts`, i cui
+utenti non hanno `passwordHash` perché quei test chiamano funzioni
+`lib/` direttamente e non fanno mai un login reale). Browser Chromium
+pre-installato in questo sandbox su una cache path fissa
+(`/opt/pw-browsers`) non allineata alla versione di `@playwright/test`
+appena installata: `playwright.config.ts` legge un
+`PLAYWRIGHT_CHROMIUM_PATH` opzionale (non impostato di default, quindi
+innocuo su qualunque altra macchina/CI) invece di un percorso fisso nel
+file — impostato solo per l'esecuzione in questo ambiente.
+
+**Due bug RBAC reali trovati nel primo giro di sviluppo di questa
+suite**, non quello che la suite doveva coprire in origine (il fix di
+`/api/search` di stamattina): il primo test di ricerca falliva in un
+modo che ha portato dritto al secondo bug. **Bug 1**: la dashboard
+(`app/(app)/dashboard/page.tsx`) — sezioni "Aggiornate di recente", "In
+scadenza" e "Per il tuo ruolo" — interrogava ogni procedura PUBLISHED
+dell'intero tenant senza mai applicare `visibilityWhereClause`: un
+utente nuovo, senza alcuna appartenenza a un dipartimento, vedeva titolo
+e dipartimento di una procedura RESTRICTED/DEPARTMENT già al primo
+accesso alla propria dashboard — stessa classe di difetto del bug di
+`/api/search` corretto poche ore prima nella stessa sessione, stavolta
+sulla home page invece che nella ricerca. **Bug 2**, trovato verificando
+il primo: `POST /api/favorites` (toggle preferito) controllava solo
+l'isolamento di tenant, mai `canViewProcedure` — un utente poteva
+aggiungere ai preferiti (e quindi fissare in modo permanente sulla
+propria dashboard) una procedura RESTRICTED/DEPARTMENT a cui non aveva
+alcun accesso. Nuovo `src/lib/favorites.ts` (`toggleFavorite`,
+`listVisibleFavorites`) estratto da `api/favorites/route.ts` per renderlo
+testabile: la creazione di un nuovo preferito ora richiede
+`canViewProcedure`; la rimozione resta sempre permessa anche per una
+procedura non più visibile (non rivela nulla, permette solo di ripulire
+un proprio riferimento ormai stantio). Stesso `visibilityWhereClause`
+applicato anche al widget preferiti della dashboard e a
+`GET /api/favorites`, come difesa in profondità per preferiti creati
+prima di questo fix. 7 nuovi test Vitest (`tests/favorites.test.ts`) più
+i 7 Playwright, entrambi verificati dal vivo: dashboard e ricerca
+mostrano/nascondono correttamente la procedura riservata a seconda
+dell'appartenenza al dipartimento, contro un vero browser Chromium e un
+vero Postgres. `vitest.config.mts` ristretto esplicitamente a
+`tests/**/*.test.ts` (altrimenti il glob di default di Vitest
+raccoglieva anche `e2e/*.spec.ts`, che il runner di Playwright rifiuta se
+eseguito da un altro test runner). `npx tsc --noEmit` pulito, `npm test`
+117/117, `npm run test:e2e` 7/7. Dati di scarto rimossi (un tenant
+Playwright di un run precedente rimasto per un'interruzione a metà,
+ripulito a mano).
+
+**25 ago 2026 (4)**: Roadmap #6, continuazione — copertura test per
+l'upload allegati. Estratta in `src/lib/attachments.ts` la logica pura
+già presente ma inline in `api/attachments/route.ts` (whitelist
+estensioni, mappatura content-type, costruzione della storage key) —
+nessun bug di permessi trovato qui (POST/DELETE/download erano già
+correttamente filtrati da `canEditProcedure`/`canViewProcedure`, rule 4
+rispettata), ma zero copertura test su una logica comunque rilevante per
+la sicurezza: `isAllowedAttachmentType` è una whitelist, non una
+blacklist, e la storage key non deriva mai dal nome file originale
+(oltre alla sua estensione, già validata) proprio per restare immune a
+un path traversal tipo `evil.pdf/../../etc/passwd` — 12 nuovi test
+provano anche questo caso esplicitamente, non solo i casi comuni. **Nota
+sull'ambiente, non un bug**: `POST /api/attachments` controlla
+`storage.isStorageConfigured()` come prima cosa, prima di qualunque
+validazione — in questo sandbox niente Object Storage S3-compatible è
+raggiungibile (nessun demone Docker per MinIO, nessun accesso di rete per
+scaricarne il binario), quindi quella route restituisce sempre 503 e la
+sua logica di validazione (oltre a quella già estratta e testata) non è
+verificabile dal vivo qui, a differenza di `DELETE`/`download` che sono
+gate-ate dal permesso *prima* di toccare lo storage. **Verificato dal
+vivo** proprio quei due: procedura di scarto impostata `RESTRICTED` in
+Legal & Compliance, un `Attachment` inserito direttamente (bypassando
+l'upload reale, irraggiungibile qui) — `viewer@demo.com` (VIEWER solo in
+HR) riceve 403 sia su download sia su delete; `editor@demo.com` (EDITOR
+in Legal & Compliance) supera il controllo di permesso su download
+(bloccato solo dal 503 "storage non configurato", non da un 403 — prova
+che il gate RBAC funziona indipendentemente dal limite d'ambiente) e
+riesce a cancellare l'allegato, con una riga `AuditLog` scritta
+correttamente. `npx tsc --noEmit` pulito, `npm test` 108/108. Dati di
+scarto rimossi (stesso 500 innocuo di MeiliSearch non raggiungibile già
+documentato altrove sulla `DELETE` della procedura).
+
+**25 ago 2026 (3)**: Roadmap #6, continuazione — copertura test per la
+ricerca (`tests/search.test.ts`, `tests/permissions-search-visibility.test.ts`).
+**Bug RBAC reale trovato scrivendo questi test, corretto nello stesso
+passaggio**: `GET /api/search` non applicava alcun filtro di visibilità —
+un utente autenticato qualunque poteva vedere titolo/sommario/dipartimento
+di una procedura DEPARTMENT o RESTRICTED anche senza appartenenza a quel
+dipartimento, perché sia il percorso MeiliSearch sia il fallback Postgres
+filtravano solo per `status = PUBLISHED`, mai per `visibility` (regola
+architetturale 4 violata: i controlli di permesso vanno sempre da
+`lib/permissions`, non reimplementati/omessi in una route). Nuovo
+`filterVisibleProcedureHits()` in `lib/permissions/index.ts`: dato un
+elenco di id "candidati" da un motore di ricerca, restituisce solo quelli
+che l'utente può davvero vedere (status PUBLISHED **e** la stessa regola
+di `canViewProcedure`), nello stesso ordine di rilevanza — lo stesso
+pattern "il motore di ricerca propone, Postgres decide la visibilità" che
+`api/ai/ask/route.ts` già usava per sé stesso (per lo stesso motivo:
+citare una fonte in una risposta AI richiede la stessa garanzia), ora
+condiviso da entrambe le route invece che duplicato. **Secondo bug
+correlato, trovato nello stesso passaggio**: `lib/search.ts` interpolava
+`departmentId`/`type`/`tags` — tutti presi da query string, quindi
+manipolabili dal chiamante — senza escaping dentro l'espressione filtro
+di MeiliSearch (`tags = "${t}"`), la stessa classe di difetto di una SQL
+costruita per concatenazione: un valore con una `"` avrebbe potuto uscire
+dalla stringa e alterare il filtro, incluso il vincolo `status =
+PUBLISHED` stesso. Nuovo `escapeMeiliFilterValue()` applicato a tutti e
+tre i valori. Il primo bug (RBAC) è quello che conta di più in pratica
+— anche se l'injection avesse aggirato `status = PUBLISHED`, avrebbe
+comunque incontrato il ricontrollo Postgres di `filterVisibleProcedureHits`
+per bloccarla; ma erano due difetti reali indipendenti nella stessa area,
+corretti entrambi. Applicato anche a `api/ai/ask/route.ts`, che aveva già
+il pattern giusto ma senza il ricontrollo `status`. 13 nuovi test.
+**Verificato anche dal vivo**, non solo con i test contro il tenant di
+prova: procedura reale duplicata, impostata `RESTRICTED` nel dipartimento
+Legal & Compliance — `viewer@demo.com` (VIEWER solo in HR) non la trova
+più in `/api/search`, mentre `editor@demo.com` (membro di Legal &
+Compliance) e l'ADMIN la trovano entrambi correttamente. `npx tsc
+--noEmit` pulito, `npm test` 96/96. Procedura di scarto rimossa (stesso
+500 innocuo di MeiliSearch non raggiungibile già documentato altrove,
+confermato via query diretta a Postgres). MeiliSearch non è comunque
+raggiungibile in questo sandbox, quindi il percorso Meili vero e proprio
+non è stato eseguibile dal vivo end-to-end — solo il fallback Postgres
+(che condivide la stessa `filterVisibleProcedureHits`, coperta a sua volta
+dai 13 test contro il DB reale) — verificato dal vivo.
+
+**25 ago 2026 (2)**: Roadmap #5, continuazione — header `Authorization`
+opzionale sull'azione `SEND_WEBHOOK` del motore di automazioni (Traccia
+3.3, già esistente dal 21 ago 2026). Quel webhook generico sbloccava già
+Jira via il suo trigger "Automation for Jira — Incoming webhook" (segreto
+nell'URL, come Teams/Slack), ma non ServiceNow/Freshdesk chiamati
+direttamente sulle loro API REST native, che vogliono un header
+`Authorization` (Basic/Bearer) su ogni richiesta. Nuovo
+`SendWebhookConfig.authHeader` (`lib/automations/types.ts`): l'intero
+valore dell'header, incollato così com'è dall'admin — non un selettore
+Basic/Bearer/altro, perché Jira/ServiceNow/Freshdesk usano già 3 forme
+diverse e "aiutare" con un campo strutturato sposterebbe solo il problema
+a un quarto provider. `executeSendWebhook` lo inoltra quando presente; UI
+in `create-automation-dialog.tsx` (campo password, sotto l'URL). Mascherato
+per nome campo (non c'è un regex generico che lo becchi come fa
+`GET /api/admin/integrations` sui suoi `token|secret|key|password`) in
+entrambe le route che possono restituire una regola salvata — scritto
+così fin dalla prima stesura. **Nota collaterale trovata verificando
+questo, non corretta (fuori scope)**: `GET /api/admin/integrations`
+stesso non maschera `webhookUrl` di Slack/Google Chat/Teams nonostante un
+URL di incoming webhook sia esso stesso un segreto — non una falla nuova
+(route già ADMIN-only per tenant), solo un'incoerenza pre-esistente
+segnalata qui. 7 nuovi test (`tests/automations-webhook-action.test.ts`).
+**Verificato anche dal vivo**: un server di eco locale che risponde 401
+se l'Authorization non combacia esattamente, regola reale creata via API,
+procedura di scarto critica portata a mano attraverso l'intera pipeline
+(submit → compliance → management, ognuna via `decide` reale) fino a
+`PUBLISHED` — il server di eco ha ricevuto l'header corretto insieme al
+payload procedura, `AutomationRun` con `status: SUCCESS`; mascheramento
+confermato sul `GET` successivo alla creazione. `npx tsc --noEmit`
+pulito, `npm test` 83/83. Dati di scarto rimossi (regola, procedura —
+quest'ultima con lo stesso 500 innocuo di MeiliSearch non raggiungibile
+già documentato altrove). Dettagli completi in Traccia 3.3 (estensione)
+di `docs/REDESIGN-FEATURE-AUTOMATION-PLAN.md`.
+
+**25 ago 2026**: Roadmap #5 — adapter Microsoft Teams
+(`src/lib/integrations/teams.ts`), stesso ruolo di `slack.ts`/`gchat.ts`
+nel fan-out di `notifyEvent()` (regola architetturale 6): nuovo
+`NotificationChannel.TEAMS` e `NotificationPreference.teamsEnabled`
+(migration `add_teams_notification_channel`, default `false` come
+`gchatEnabled` — opt-in esplicito, non opt-out come Slack). Solo modalità
+webhook implementata (`config = { mode: "webhook", webhookUrl }`): il
+payload è un Adaptive Card avvolto in `attachments`, non il vecchio
+formato `MessageCard` — Microsoft ha ritirato i connector "Incoming
+Webhook" di Office 365 per Teams (dismissione completata nel 2025),
+sostituiti dall'app "Workflows" (un flusso Power Automate con trigger
+HTTP) che si aspetta esattamente questa busta. Modalità bot (DM diretta
+per utente) lasciata come TODO esplicito, stesso motivo del TODO di
+`gchat.ts`: richiede un Azure Bot registrato con canale Teams abilitato
+più una conversation reference per utente salvata altrove — non
+verificabile senza un tenant Azure reale, quindi non implementata "a
+tentativi". Toccati anche `lib/ack-token.ts` (union del `channel` estesa
+a `"TEAMS"`, per il link "Conferma lettura" da Teams) e il certificato
+PDF di compliance (`ack-certificate/route.ts`, mancava l'etichetta
+"Microsoft Teams" — sarebbe comunque comparso "TEAMS" grezzo grazie al
+fallback esistente, non un crash, ma impreciso su un documento di
+compliance). **Bug reale trovato mentre si cercava dove agganciare
+l'adapter, non introdotto da questo lavoro**: non esiste (e non è mai
+esistita) nessuna UI admin per configurare le integrazioni — la pagina
+`/admin/settings` promette un link "Slack, Google Chat, e canali di
+notifica" che in realtà punta alla dashboard KPI (`/admin`), che non ha
+alcuna sezione integrazioni; l'unico modo reale di configurare Slack o
+Google Chat oggi è una chiamata diretta a `POST /api/admin/integrations`.
+Non corretto in questo passaggio (fuori scope per l'item #5 della
+roadmap, serve la sua UI dedicata), solo verificato e segnalato qui
+perché altrimenti si sarebbe scoperto di nuovo alla prossima sessione.
+6 nuovi test (`tests/integrations-teams.test.ts`, `fetch` mockato — è
+I/O di rete, non DB — per verificare la busta Adaptive Card, azioni
+condizionali, e che né una config incompleta né un fallimento di rete
+facciano mai propagare un'eccezione fuori dal fan-out). **Verificato
+anche dal vivo**: server dev + worker notifiche reali contro
+Postgres/Redis locali, un listener HTTP locale come sostituto del
+webhook Workflows di Teams, integrazione registrata via
+`POST /api/admin/integrations`, una procedura di scarto critica
+(`isCritical: true`, così `resolveDefaultRecipients` notifica l'intero
+tenant) sottoposta a `submitForReview` reale — il listener ha ricevuto
+un vero payload Adaptive Card con titolo, azione "Apri in Procedure Hub"
+e URL corretti. `npx tsc --noEmit` pulito, `npm test` 76/76. Dati di
+test rimossi a fine verifica (riga `Integration`, riga
+`NotificationPreference` di scarto, procedura di scarto — quest'ultima
+con lo stesso 500 innocuo di MeiliSearch non raggiungibile già
+documentato altrove, confermato via query diretta a Postgres).
+
+**24 ago 2026 (5)**: Traccia 4.4 — segnalibri PDF/Word reali per il
+blocco `TABLE_OF_CONTENTS` esportato: prima era una lista puntata con lo
+stesso testo dei titoli, non collegata a nulla. `lib/export/content-blocks.ts`
+(fonte condivisa dei tre export) ora produce un `tocEntry` con
+`headingIndex` (posizione 0-based del titolo tra tutte le intestazioni
+del documento) invece di un `listItem`; `pdf.ts`/`docx.ts` numerano le
+proprie intestazioni nello stesso ordine, così le due numerazioni
+combaciano sempre. **PDF**: nuovo `lib/export/pdf-bookmarks.ts` costruisce
+a mano l'albero `/Outlines` sul `PDFContext` di basso livello di
+`pdf-lib` (nessuna API alto livello disponibile) con annidamento reale
+(un H2 diventa figlio dell'H1 precedente) e `PageMode=UseOutlines`;
+ogni voce dell'indice diventa anche un'annotazione `/Link` reale. Insidia
+di `pdf-lib`: `context.obj()` converte una stringa nuda in `PDFName`, non
+`PDFString` — un titolo di segnalibro va costruito con
+`PDFHexString.fromText()`. **Word**: usa `Bookmark`/`InternalHyperlink`
+nativi di `docx`. **Bug reale trovato nella libreria `docx` stessa (non
+nel nostro codice)**, verificando l'XML generato: `Bookmark` genera il
+proprio `w:id` chiamando un generatore di id fresco dentro il costruttore
+di *ogni* istanza, quindi tutti i segnalibri del documento finiscono con
+`w:id="1"` — viola lo schema OOXML ma non rompe la navigazione, perché
+Word risolve `InternalHyperlink` per **nome** (`w:anchor`), non per id
+numerico, e i nostri segnalibri non sono mai annidati/sovrapposti.
+Documentato, non "corretto" (interno a `node_modules/docx`). 14 nuovi
+test (`export-content-blocks`/`export-pdf-bookmarks`/`export-docx-bookmarks`,
+questi ultimi due generano file reali e li ri-ispezionano con l'API di
+lettura di `pdf-lib`/`jszip`, non mock). **Verificato anche dal vivo**
+oltre ai test: procedura duplicata con un blocco TOC messo *prima* delle
+sue stesse intestazioni (il caso più difficile), pubblicata, PDF/Word
+scaricati ed ispezionati con strumenti indipendenti da quelli usati per
+generarli — `pypdf` per il PDF (3 segnalibri corretti, 3 link con
+destinazioni Y distinte), ispezione XML grezza per il `.docx`
+(`w:bookmarkStart`/`w:hyperlink` con nomi/anchor corretti). `npx tsc
+--noEmit` pulito, `npm test` 70/70. Dati di test rimossi (due 500 durante
+la pulizia, entrambi lo stesso problema pre-esistente e innocuo di
+MeiliSearch non raggiungibile in questo sandbox dopo il commit della
+transazione DB — confermato via `dev.log` e query dirette a Postgres, non
+una regressione). Dettagli completi in Traccia 4.4 del piano.
+
+**24 ago 2026 (4)**: Traccia 4.3 — gli ultimi tre tipi di blocco
+Notion-standard: `EMBED` (qualunque URL iframe-abile, non solo YouTube),
+`DIAGRAM` (Mermaid — anteprima live nell'editor con import dinamico,
+nuova dipendenza `mermaid`; sul lato lettura un componente client,
+`mermaid-renderer.tsx`, idrata il sorgente base64 in un SVG reale dopo
+il mount, perché a differenza di `EMBED` non c'è equivalente
+server-side), `COLUMN_LIST`/`COLUMN` (layout a 2 colonne, `/colonne` —
+prima esistevano solo come `BlockType` mai renderizzabili/inseribili;
+prima vera necessità di aggiungere un blocco come *figlio* di un
+blocco esistente, non solo come fratello — nuovo `onAddChild` in
+`block-editor.tsx`). Stesso pattern segnaposto-sentinella già usato per
+`TABLE_OF_CONTENTS` (4.2), esteso a due varianti (iframe statico per
+EMBED, hydration client per DIAGRAM). **Bug reale trovato non specifico
+alle colonne**: eliminare un blocco rimuoveva dallo stato client solo i
+figli diretti, non ogni discendente — il database cascata
+correttamente, ma un nipote (blocco dentro una colonna la cui
+`COLUMN_LIST` viene eliminata) sopravviveva come blocco radice orfano
+fino al reload; stesso gap pre-esistente su Toggle/liste annidate.
+Corretto con un `collectDescendantIds()` condiviso. Verificato dal vivo
+(Playwright): diagramma Mermaid reale con nodi/frecce nell'editor,
+pubblicato e confermato che l'SVG (non il segnaposto) compaia in
+lettura — attenzione per chi riverifica: il primo caricamento del
+bundle `mermaid` nel browser richiede qualche secondo, non affidarsi a
+un'attesa fissa breve. `npm test` 56/56 (7 nuovi). Dettagli completi in
+Traccia 4.3 del piano.
+
+**24 ago 2026 (2)**: Traccia 4 avviata in
+`docs/REDESIGN-FEATURE-AUTOMATION-PLAN.md` — parità UX con Notion sulla
+pagina procedura, identità visiva Control Room invariata (richiesta
+esplicita: pattern di interazione, non un pivot di palette). **4.1
+fatta**: menu opzioni pagina "⋯" (`page-options-menu.tsx` — copia
+link/contenuto, Duplica, Testo piccolo/Larghezza intera come preferenze
+di sola visualizzazione per-utente via `localStorage`, Blocca/Sblocca
+pagina), azioni per blocco nell'editor (hover → "+" inserisci
+sotto, menu "⋮" → Duplica blocco/Trasforma in/Elimina). Nuovo
+`Procedure.isLocked` + `canMutateProcedureContent()` in
+`lib/permissions/index.ts`, applicato a ogni superficie che scrive
+contenuto incluso `collab-server/server.ts` stesso (non solo la route
+che emette il token). Due bug reali trovati verificando dal vivo (non
+solo `tsc --noEmit`): `CALLOUT` mancava da `BLOCK_COMMANDS` fin dalla
+Fase 1 (nessun modo di inserirne uno via `/`); duplicare la procedura
+demo copiava zero blocchi perché il suo `contentJson` seed è `{}` e
+niente applicava il backfill lazy che `GET .../blocks` fa normalmente —
+la route duplicate ora lo applica anch'essa. Verificato con Playwright
+contro Postgres/Redis locali: menu completo, preferenze persistite dopo
+reload, duplicazione con contenuto reale, blocco/sblocco incrociato tra
+un Admin e un EDITOR non-Owner sulla stessa procedura. `npm test`
+42/42 (5 nuovi). **4.2 (TOC/modalità lettura) fatta subito dopo, vedi
+voce successiva.**
+
+**24 ago 2026 (3)**: Traccia 4.2 — pannello "Indice" (outline che segue
+lo scroll, `reading-outline.tsx`, scrollspy reale via
+`IntersectionObserver`) sulla pagina procedura, più il blocco
+`TABLE_OF_CONTENTS` reso finalmente funzionante (era un `BlockType` dalla
+Fase 1, mai renderizzato, mancava perfino dal menu `/`). Nuovo
+`lib/toc.ts`: un'unica passata su `contentHtml` assegna id-ancora a ogni
+titolo e sostituisce il blocco TOC con link reali agli stessi id — usato
+sia dal pannello di lettura sia da "Copia contenuto pagina" (4.1). 7 test
+puri in `tests/toc.test.ts`. **Due bug reali trovati verificando dal
+vivo**, uno serio e pre-esistente: `prisma/seed.ts` salvava
+`contentJson: {}` per la procedura demo (corretto, ora un vero documento
+ProseMirror); e `hooks/use-collaborative-editor.ts` esponeva `doc`/
+`provider` non appena *costruiti*, non quando la connessione andava
+davvero a buon fine — con `collab-server` irraggiungibile (come in
+questo ambiente di verifica) l'editor a blocchi credeva la sessione
+collaborativa attiva e mostrava **ogni** blocco vuoto, testo reale in
+Postgres o meno, non solo il blocco TOC. Corretto: `doc`/`provider`
+esposti solo dentro `onStatus` a connessione confermata. Verificato dal
+vivo (Playwright): pannello con 3 titoli reali, scrollspy corretto,
+blocco TOC inserito via `/indice` su un duplicato con contenuto vero,
+pubblicato e confermato che la pagina mostri link reali (non il testo
+segnaposto). `npx tsc --noEmit` pulito, `npm test` 49/49. Dettagli
+completi in Traccia 4 del piano — non fatti per scelta: `EMBED`/
+`DIAGRAM`/colonne, bookmark PDF/Word reali per il blocco TOC esportato.
+
 **24 ago 2026**: piano `docs/REDESIGN-FEATURE-AUTOMATION-PLAN.md`
 **completato fino a 3.5** (resta aperto solo 3.6, fuori scope per
 scelta) — Traccia 2 (2.1-2.6) e Traccia 3 (3.1-3.4) erano già state
@@ -219,11 +971,12 @@ in-app + Slack/Google Chat (modalità webhook) · ricerca full-text con filtri
 presigned URL S3-compatible, download/delete con stessa RBAC della procedura)
 · sync automatico indice di ricerca (pubblicazione, archiviazione ed
 eliminazione tengono MeiliSearch coerente entro la stessa richiesta; backfill
-con `scripts/reindex.ts`) · cron reminder di revisione periodica
-(`GET /api/cron/review-reminders`, `vercel.json`, idempotente su
-`Procedure.reviewReminderSentAt`; equivalente manuale
-`scripts/send-review-reminders.ts`) · rate limiting su login/AI/quick-confirm
-(`lib/rate-limit.ts`, fail-open su Redis irraggiungibile).
+con `scripts/reindex.ts`) · promemoria di revisione periodica ed escalation
+Read & Acknowledge, entrambi sul motore di automazioni come regole
+predefinite per-tenant (`GET /api/cron/automations`, `vercel.json`,
+`lib/automations/defaults.ts` — dettagli in Roadmap #4, 9 set 2026) · rate
+limiting su login/AI/quick-confirm (`lib/rate-limit.ts`, fail-open su Redis
+irraggiungibile).
 
 Oltre questo, dal lavoro seguito in `New plan/` (vedi `New plan/00-INDEX.md`):
 motore a blocchi (editor stile Notion, `src/components/blocks/`, sostituisce
@@ -269,14 +1022,36 @@ utenti, non per difficoltà tecnica.
    lo spazio DM e posta il messaggio è un TODO esplicito in `gchat.ts` —
    verificarne il comportamento contro un Workspace reale prima di
    completarla (solo la modalità webhook è end-to-end oggi).
-4. **Migrare review-reminders/ack-escalation sul motore di automazioni**:
-   deliberatamente non fatto il 19 ago 2026 quando è stato introdotto il
-   motore — `lib/review-reminders.ts` e `lib/ack.ts` restano il percorso
-   reale finché il motore nuovo non ha girato un ciclo di produzione senza
-   incidenti (conseguenze di compliance reali se si rompono).
+4. **Migrare review-reminders/ack-escalation sul motore di automazioni —
+   fatta, 9 set 2026**, su richiesta esplicita di procedere subito
+   (deliberatamente rimandata il 19 ago 2026 in attesa di un ciclo di
+   produzione senza incidenti — impossibile da verificare davvero in
+   questo sandbox, che non ha traffico di produzione reale: la decisione
+   di procedere comunque è stata dell'utente, non un giudizio autonomo di
+   Claude). Vedi la voce di changelog sotto per i dettagli — `lib/review-reminders.ts`
+   e `scripts/send-ack-reminders.ts` sono stati rimossi, non lasciati
+   come fallback.
 5. **Teams / SharePoint / Jira / Freshdesk / ServiceNow**: `Integration.type`
-   li prevede già nello schema; ogni adapter segue lo stesso pattern di
-   `lib/integrations/slack.ts`.
+   li prevede già nello schema. **Microsoft Teams fatto, 25 ago 2026**
+   (`lib/integrations/teams.ts`, modalità webhook — vedi voce di changelog
+   sotto per i dettagli); modalità bot (DM diretta) resta un TODO esplicito
+   per lo stesso motivo del bot mode di `gchat.ts`: serve un Azure Bot
+   registrato + una conversation reference per utente, non verificabile
+   senza un tenant Azure reale. **Jira/ServiceNow/Freshdesk: non più "da
+   fare da zero" come scritto qui il 25 ago 2026 mattina** — non sono
+   canali di notifica come Slack/Teams/Google Chat (sono sistemi di
+   ticketing, l'integrazione naturale è "crea un ticket quando succede X",
+   non "manda un messaggio di chat"), ma l'azione `SEND_WEBHOOK` del
+   motore di automazioni (Traccia 3.3, 21 ago 2026) già li sblocca senza
+   un adapter dedicato per provider — esteso lo stesso giorno pomeriggio
+   con un header `Authorization` opzionale (`SendWebhookConfig.authHeader`)
+   proprio per poter chiamare le loro API REST native direttamente, non
+   solo un incoming webhook stile Teams/Slack con il segreto nell'URL.
+   Vedi Traccia 3.3 in `docs/REDESIGN-FEATURE-AUTOMATION-PLAN.md` per i
+   dettagli e la verifica dal vivo. **SharePoint fatto, 2 set 2026** —
+   vedi voce di changelog sotto per i dettagli (disegno proprio via
+   Graph API + OAuth client-credentials, non un webhook come gli altri
+   quattro). **Roadmap #5 ora completa su tutti i fronti indicati.**
 6. **Test automatici** — **avviata, 21 ago 2026**: prima infrastruttura
    Vitest (`vitest.config.mts`, `npm test`), 37 test in `tests/`, i quattro
    flussi indicati come priorità sono coperti — `tests/permissions.test.ts`
@@ -293,9 +1068,28 @@ utenti, non per difficoltà tecnica.
    un Tenant isolato (`tests/helpers/test-tenant.ts`) e lo cancella in
    `afterAll`; solo Slack/Google Chat (BullMQ) e l'indicizzazione
    MeiliSearch sono mockati (`tests/setup.ts`, infrastruttura esterna già
-   verificata altrove, non l'oggetto di questo test). Ancora da fare: motore
-   di export, ricerca, upload allegati, componenti UI — Playwright non
-   ancora introdotto.
+   verificata altrove, non l'oggetto di questo test). **Motore di export
+   coperto il 24 ago 2026** (Traccia 4.4, vedi sopra — bookmark PDF/Word).
+   **Ricerca coperta il 25 ago 2026**, vedi voce di changelog sotto: un
+   bug RBAC reale trovato scrivendo quei test (`/api/search` non filtrava
+   per visibilità) è stato corretto nello stesso passaggio, non solo
+   documentato. **Upload allegati coperto il 25 ago 2026 (pomeriggio)**:
+   logica pura estratta in `lib/attachments.ts` (whitelist estensioni,
+   content-type, costruzione della storage key) e testata; RBAC di
+   `GET .../download` e `DELETE /api/attachments/[id]` verificato dal vivo
+   contro un tenant reale — il flusso di upload vero e proprio
+   (`POST /api/attachments` oltre il controllo "storage configurato") non
+   è verificabile in questo sandbox: nessun demone Docker disponibile e
+   nessun accesso di rete per scaricare un binario MinIO, quindi nessun
+   object storage S3-compatible reale in questo ambiente (a differenza di
+   Postgres/Redis, avviati nativamente). **Playwright introdotto il 25 ago
+   2026 (sera)** (`playwright.config.ts`, `npm run test:e2e`, cartella
+   `e2e/`) — vedi voce di changelog sotto: **due bug RBAC reali trovati
+   nel primo giro di sviluppo di questa suite**, non nel codice che la
+   suite doveva coprire in origine (il fix di `/api/search`), corretti
+   nello stesso passaggio: la dashboard e la creazione di un preferito non
+   applicavano `visibilityWhereClause`/`canViewProcedure`. Item #6 della
+   roadmap ora completo su tutti i fronti indicati.
 
 ~~Export PDF/Word/Excel dalla pagina procedura~~ e ~~diff view tra
 versioni~~ risultavano qui come roadmap futura in versioni precedenti di

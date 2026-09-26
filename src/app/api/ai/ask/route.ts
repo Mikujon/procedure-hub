@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { z } from "zod";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-import { visibilityWhereClause } from "@/lib/permissions";
+import { filterVisibleProcedureHits } from "@/lib/permissions";
 import { searchProcedures } from "@/lib/search";
 import { buildAiContext } from "@/lib/ai/context";
 import { streamText } from "@/lib/ai/client";
@@ -71,16 +70,11 @@ export async function POST(req: NextRequest) {
   const results = await searchProcedures(tenantId, extractSearchTerms(parsed.data.question));
   const hitIds = (results.hits as any[]).map((h) => h.id).slice(0, 8);
 
-  const visible =
-    hitIds.length > 0
-      ? await prisma.procedure.findMany({
-          where: { id: { in: hitIds }, tenantId, ...(await visibilityWhereClause({ id: userId, tenantId, globalRole })) },
-          select: { id: true, title: true, code: true },
-        })
-      : [];
-  // Preserve search-relevance order — the findMany above doesn't guarantee it.
-  const visibleOrdered = hitIds.map((id) => visible.find((v) => v.id === id)).filter(Boolean) as typeof visible;
-  const sources = visibleOrdered.slice(0, 5);
+  // filterVisibleProcedureHits re-checks both status and visibility against
+  // Postgres and already preserves hitIds' relevance order — see its own
+  // comment in lib/permissions for why a Meili hit list is only ever a set
+  // of candidates, not something to cite an AI answer from directly.
+  const sources = (await filterVisibleProcedureHits({ id: userId, tenantId, globalRole }, tenantId, hitIds)).slice(0, 5);
 
   const encoder = new TextEncoder();
 

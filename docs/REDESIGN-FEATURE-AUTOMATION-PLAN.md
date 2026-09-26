@@ -299,6 +299,65 @@ confermato anche nel pannello 3.1 (spunta verde, "LEG-PRO-001 — ... · 2
 min fa"). Dati di test rimossi a fine verifica (regola, run iniettati,
 notifica, pagine di prova create per errore durante i test precedenti).
 
+**Estensione, 25 ago 2026** (Roadmap #5): questo webhook generico
+sbloccava già Jira via il suo trigger "Automation for Jira — Incoming
+webhook" (il segreto vive nell'URL, come per Teams/Slack) ma non
+ServiceNow/Freshdesk chiamati direttamente sulle loro API REST native, che
+richiedono un header `Authorization` (Basic/Bearer) su ogni richiesta, non
+un URL con segreto incorporato. Nuovo campo opzionale
+`SendWebhookConfig.authHeader` (`src/lib/automations/types.ts`): il valore
+*intero* dell'header Authorization, incollato così com'è dall'admin (non
+un selettore di schema Basic/Bearer/altro — Jira/ServiceNow/Freshdesk
+usano già 3 forme diverse, "aiutare" con un campo strutturato avrebbe
+solo spostato il problema a un quarto provider). `executeSendWebhook`
+(`actions.ts`) lo inoltra come header `Authorization` quando presente.
+UI: campo password "Header Authorization (opzionale)" in
+`create-automation-dialog.tsx`, sotto l'URL webhook.
+
+Il precedente di `GET /api/admin/integrations` (che maschera i campi che
+matchano `/token|secret|key|password/i` in `Integration.config`) non si
+applica qui per nome: "authHeader"/"Authorization" non matcha quella
+regex, e `actionConfig` comunque cambia forma per `actionType` (non è un
+one-size-fits-all come `Integration.config`). Mascherato quindi in modo
+esplicito per nome di campo (`actionConfig.authHeader` → `"••••••••"`)
+in entrambe le route che possono restituire una regola già salvata
+(`GET /api/admin/automations` e la risposta di
+`PATCH /api/admin/automations/[id]`, che pur non toccando `actionConfig`
+lo restituisce comunque per intero da Prisma) — scritto così fin dalla
+prima stesura, non un buco scoperto dopo. **Nota collaterale trovata
+verificando questo, non corretta (fuori scope)**: lo stesso
+`GET /api/admin/integrations` non maschera `webhookUrl` di Slack/Google
+Chat/Teams nonostante un URL di incoming webhook sia esso stesso un
+segreto — non è una falla nuova introdotta qui (la route è già
+ADMIN-only per tenant, quindi non un'escalation reale rispetto a chi può
+già scriverlo), solo un'incoerenza pre-esistente notata perché altrimenti
+si perderebbe di nuovo.
+
+7 nuovi test (`tests/automations-webhook-action.test.ts`): schema zod con e
+senza `authHeader` (e il rifiuto di una stringa vuota, per non mandare mai
+un header Authorization silenziosamente vuoto), header assente per default,
+header inoltrato verbatim quando configurato, payload procedura invariato
+in entrambi i casi, e che una risposta 401 rilanci comunque l'eccezione.
+**Verificato anche dal vivo**: un "server di eco" locale che risponde 401
+se l'header Authorization non combacia esattamente e 200 altrimenti,
+regola reale creata via API con quell'header, procedura di scarto critica
+portata a mano attraverso l'intera pipeline (submit → approvazione
+compliance → approvazione management, ognuna via `POST .../decide` reale)
+fino a `PUBLISHED` — il server di eco ha ricevuto l'header Authorization
+corretto insieme al payload procedura, `AutomationRun` con `status:
+SUCCESS`. Verificato anche il mascheramento: `POST` (che crea la regola)
+restituisce l'header in chiaro nella sua stessa risposta — non un leak,
+è l'admin che lo ha appena scritto — ma il successivo `GET` sulla lista
+lo mostra correttamente come `"••••••••"`. `npx tsc --noEmit` pulito,
+`npm test` 83/83. Dati di scarto rimossi (regola, procedura — quest'ultima
+con lo stesso 500 innocuo di MeiliSearch non raggiungibile già
+documentato altrove, confermato via `dev.log` e query dirette a Postgres).
+
+SharePoint resta esplicitamente fuori scope: non è un consumer di
+webhook "ricevi un evento, fai qualcosa" come Jira/ServiceNow/Freshdesk —
+è storage/collaborazione documentale, andrebbe disegnato via Graph API +
+OAuth, una forma di integrazione del tutto diversa.
+
 ### 3.4 Nuovi trigger, in coppia con la Traccia 2 — **"Commento aggiunto" fatto, 21 ago 2026; "Page verificata" no, per scelta**
 
 "Page verificata" (si aggancia a 2.4) e "Commento aggiunto" (si aggancia a
@@ -374,6 +433,379 @@ prima e a costo molto minore con 3.1-3.3.
 **Verifica**: stesso standard di 2.x — creare una regola vera, farla
 scattare per davvero (non simulare), controllare `automation_runs` e la
 notifica risultante nel database.
+
+---
+
+## Traccia 4 — Parità UX con Notion sulla pagina procedura
+
+*Aggiunta 24 ago 2026, su richiesta esplicita ("come Notion, ma con
+un'identità propria"): non un pivot di palette (Control Room resta —
+vedi `docs/DESIGN.md`, terza direzione visiva, deliberatamente non un
+clone Notion), ma i pattern di interazione — menu opzioni pagina,
+controlli a comparsa sul singolo blocco.*
+
+### 4.1 Menu opzioni pagina ("⋯") + azioni per blocco — **fatta, 24 ago 2026**
+
+Nuovo `components/procedures/page-options-menu.tsx` sulla pagina
+procedura (accanto a Preferiti/Esporta/Modifica): Copia link, Copia
+contenuto pagina (estratto testo reale via `stripHtml`, non
+ricalcolato lato client), Duplica, due preferenze di sola
+visualizzazione per-utente (Testo piccolo/Larghezza intera — persistite
+in `localStorage`, mai sul modello dati: sono un gusto del singolo
+lettore, non una proprietà della procedura — vedi
+`procedure-view-shell.tsx`), Blocca/Sblocca pagina.
+
+**Duplica** (`POST /api/procedures/[id]/duplicate`): copia l'intero
+albero di Block live (non solo l'ultimo `contentHtml` pubblicato — una
+bozza mai pubblicata viene duplicata comunque), più tag e metadati
+(dipartimento/processo/parent/tipo/criticità/visibilità), genera una
+nuova `ProcedureVersion` v1 dalla stessa copia (stesso pattern di
+`promote-to-procedure`) così la copia si legge bene anche prima di un
+primo publish. Storia (versioni, commenti, ack, workflow, allegati)
+deliberatamente NON copiata — una copia parte pulita. Codice reso unico
+con suffisso `-COPY`, `-COPY-2`, ... invece di chiedere all'utente.
+**Bug reale trovato verificando**: la procedura demo `LEG-PRO-001`
+(seed) ha `ProcedureVersion.contentJson = {}` (mai stato un documento
+ProseMirror vero — solo `contentHtml` è popolato nel seed) — duplicarla
+copiava zero blocchi anche col codice corretto, perché
+`prisma.block.findMany` sulla sorgente restituiva un array vuoto e
+niente triggerava il backfill lazy che `GET .../blocks` applica normalmente.
+Il fix: la route duplicate applica lo stesso backfill lazy (da
+`contentJson`) prima di copiare, se la sorgente non ha ancora righe
+`Block` — verificato aggiungendo blocchi reali via API a una copia di
+prova e confermando che la nuova procedura li riceve intatti (query
+diretta sul DB), poi ripulito. Non è stato toccato `prisma/seed.ts` —
+il `contentJson: {}` lì resta un gap di dati demo pre-esistente, non
+nel percorso di questo lavoro.
+
+**Blocca pagina** (`Procedure.isLocked`, nuova migration): azione di
+governance, stesso livello di permesso di "pubblica"
+(`canPublishProcedure`) — non un edit qualunque. Nuovo
+`canMutateProcedureContent()` in `lib/permissions/index.ts` (regola
+architetturale 4: i controlli passano sempre da lì) centralizza la
+regola e sostituisce `canEditProcedure` in ogni punto che scrive
+contenuto: `PATCH /api/procedures/[id]` (percorso legacy), le tre route
+Block (`POST .../blocks`, `PATCH`/`DELETE /api/blocks/[id]` via
+`canEditBlockParent`), il token di collaborazione
+(`GET .../collab-token`) e **anche** `collab-server/server.ts` stesso
+(che riverifica sempre lato server, non si fida del claim nel JWT — non
+sarebbe bastato aggiornare solo la route che emette il token). Un
+locked nega tutti tranne chi potrebbe pubblicare (Owner di
+dipartimento/Admin); non tocca le transizioni di workflow
+(submit/decide/archive restano invariate — bloccare i contenuti non è
+congelare l'approvazione). `POST /api/procedures/[id]/lock` scrive
+`AuditLog` (`UPDATE`, `metadata.field = "isLocked"`). Badge "Bloccata"
+sullo `StatusStamp`, banner esplicativo nella pagina di modifica quando
+l'utente corrente non può bypassare il lock.
+
+**Azioni per blocco** (`block-renderer.tsx`/`block-editor.tsx`): hover
+su un blocco rivela un "+" (inserisce un paragrafo subito sotto,
+riusa `onSelectBlockType` già esistente) e un menu "⋮" — Duplica blocco
+(non copia i figli annidati, raro nella pratica: solo Toggle/liste ne
+hanno), Trasforma in (sottomenu, riusa la stessa lista icone/etichette
+di `BLOCK_COMMANDS` filtrata ai soli tipi "testuali" — cambia il `type`
+del blocco esistente mantenendone il contenuto, via `PATCH
+/api/blocks/[id]`; distinto dal comando slash, che inserisce sempre un
+blocco nuovo), Elimina (spostata dentro il menu, prima era un'icona
+cestino sempre a sé). **Bug reale trovato nello stesso passaggio**:
+`CALLOUT` è un `BlockType` renderizzato da `BlockRenderer` fin dalla
+Fase 1 ma **assente** da `BLOCK_COMMANDS`
+(`slash-command-menu.tsx`) — non esisteva alcun modo di inserirne uno
+via `/`. Aggiunto (icona `Megaphone`); il menu "Trasforma in" eredita
+il fix gratis, riusando la stessa lista.
+
+Verificato dal vivo (browser reale, Playwright headless contro un
+Postgres/Redis locali in questa sessione, non solo `tsc --noEmit`):
+menu opzioni con tutte le voci, copia link/contenuto, toggle
+Testo piccolo/Larghezza intera persistiti dopo reload, duplicazione con
+contenuto reale (vedi bug sopra), blocco/sblocco incrociato tra due
+utenti — Admin blocca, un EDITOR (non Owner) sulla stessa procedura
+vede il badge "Bloccata" e un banner in modifica con campi disabilitati,
+un Owner/Admin può ancora modificare — hover/menu/duplica/trasforma-in
+sul singolo blocco. `npx tsc --noEmit` pulito, `npm test` 42/42 (5
+nuovi su `canMutateProcedureContent`). Dati di test rimossi a fine
+verifica.
+
+### 4.2 Indice/TOC — pannello di lettura + blocco `TABLE_OF_CONTENTS` — **fatta, 24 ago 2026**
+
+Il terzo pilastro discusso con l'utente ("come si apre/legge una
+procedura, modi di visualizzarla"). Due pezzi, un'unica fonte di verità
+per gli anchor id:
+
+**`lib/toc.ts`** (nuovo, puro, senza dipendenze DOM): un'unica passata su
+`contentHtml` che (1) assegna un id ancora (`heading-<slug>`,
+disambiguato `-2`/`-3`... su testo ripetuto) a ogni `<h1-3>` — sicuro
+perché `contentHtml` è sempre l'output del nostro stesso
+`generateHTML()` (Fase 1 o editor legacy, entrambi StarterKit), mai HTML
+arbitrario di terzi — e (2) sostituisce il segnaposto di un eventuale
+blocco `TABLE_OF_CONTENTS` con un `<nav class="toc-block">` reale di
+link a quegli stessi id. 7 test puri in `tests/toc.test.ts` (id in
+ordine, disambiguazione, heading vuoto ignorato, entità/marcatori
+interni ripuliti dall'etichetta ma non dall'HTML renderizzato,
+sostituzione del segnaposto, stato vuoto senza titoli, contenuto senza
+TOC/heading invariato).
+
+**Pannello di lettura** (`components/procedures/reading-outline.tsx`):
+card "Indice" nella colonna laterale della pagina procedura — sticky,
+scrollspy reale via `IntersectionObserver` (non solo scroll listener),
+click con smooth-scroll. Non renderizzata sotto 2 titoli (una procedura
+con zero o un solo titolo non ha nulla da navigare, e la colonna
+laterale è già affollata). `procedures/[id]/page.tsx` ora calcola
+`renderContentWithToc()` una sola volta e ne riusa l'output sia per il
+contenuto renderizzato sia per "Copia contenuto pagina" (il menu
+opzioni, 4.1) — il segnaposto del blocco TOC non finisce mai più negli
+appunti copiati.
+
+**Blocco `TABLE_OF_CONTENTS`** (era già un `BlockType` dalla Fase 1, mai
+renderizzato — cadeva nel placeholder "tipo non supportato" di
+`block-renderer.tsx`, e mancava perfino dal menu slash): ora inseribile
+via `/indice`, mostra dal vivo nell'editor l'elenco dei titoli
+*top-level* del documento (computato in `block-editor.tsx` da
+`tree`, non uno stato proprio del blocco — zero testo memorizzato,
+sempre aggiornato), click scorre al blocco tramite un nuovo
+`data-block-id` sul wrapper di ogni riga. Alla pubblicazione,
+`lib/blocks/serialize.ts` emette un paragrafo-segnaposto con un
+marcatore sentinella (`⟦PROCEDURE_HUB_TOC⟧`) che `lib/toc.ts` sostituisce
+con i link veri — stessi id del pannello di lettura sopra.
+`lib/export/content-blocks.ts` (PDF/Word/Excel, che legge `contentJson`
+direttamente, non passa da `lib/toc.ts`) riconosce lo stesso marcatore e
+lo espande in un elenco puntato semplice dei titoli — non un vero
+bookmark (pdf.ts/docx.ts non hanno quel concetto oggi), ma niente più
+testo sentinella grezzo nel documento esportato.
+
+**Due bug reali trovati verificando dal vivo** (non solo `tsc`), uno dei
+due serio e pre-esistente, scoperto solo perché questo era il primo
+lavoro della sessione ad aprire l'editor a blocchi su una procedura con
+contenuto realmente non vuoto:
+- **`prisma/seed.ts`** salvava `contentJson: {}` per la procedura demo
+  (solo `contentHtml` era popolato) — qualunque backfill lazy dei Block
+  (quello già esistente in `GET .../blocks`, e quello nuovo di 4.1 in
+  `POST .../duplicate`) produceva zero blocchi nonostante la pagina di
+  lettura mostrasse il contenuto perfettamente. Corretto scrivendo un
+  vero documento ProseMirror in `contentJson`, identico a `contentHtml`.
+- **`hooks/use-collaborative-editor.ts`** esponeva `doc`/`provider` nel
+  momento stesso in cui venivano *costruiti* (`new Y.Doc()` +
+  `new HocuspocusProvider(...)`), non quando la connessione andava
+  davvero a buon fine. Risultato: con un token emesso ma `collab-server`
+  irraggiungibile (`COLLAB_JWT_SECRET` impostato, il processo
+  collab-server no — esattamente lo stato di questo ambiente di
+  verifica, e di qualunque deploy reale in cui collab-server sia giù),
+  `BlockEditor` credeva la sessione collaborativa attiva e passava un
+  `Y.XmlFragment` vuoto mai sincronizzato a ogni blocco — che quindi
+  ignora `initialContent` per design (vedi `InlineRichText`). Ogni
+  procedura aperta nell'editor a blocchi con `collab-server` non
+  raggiungibile mostrava **tutti** i blocchi vuoti, testo reale in
+  Postgres o meno — non un problema isolato al blocco TOC. Fix: `doc`/
+  `provider` vengono esposti solo dentro `onStatus` quando lo stato è
+  davvero `Connected`; il messaggio "Connessione alla sessione
+  collaborativa…" ora sparisce anche quando la connessione fallisce
+  (prima restava per sempre). Nessun test automatico coperto (hook React
+  con dipendenza WebSocket, l'infrastruttura Vitest di questo repo è
+  `environment: "node"`, senza jsdom) — verificato dal vivo nel browser,
+  stesso standard del resto di questa sessione.
+
+Verificato dal vivo (Playwright contro Postgres/Redis locali): pannello
+Indice con 3 titoli reali della procedura seed, scrollspy con
+evidenziazione corretta dopo click, blocco TOC inserito via `/indice` su
+una procedura duplicata con contenuto reale (non vuoto, grazie al fix
+del seed) che mostra dal vivo gli stessi 3 titoli, pubblicato e
+verificato che la pagina risultante mostri link reali (`<nav
+class="toc-block">`) e non il testo sentinella. `npx tsc --noEmit`
+pulito, `npm test` 49/49 (7 nuovi). Dati di test (procedure duplicate di
+prova) rimossi a fine verifica — la procedura seed reale non è mai stata
+toccata, solo corretta nel file sorgente e ri-seedata.
+
+Non fatto nella stessa sessione, per scelta (stessa logica di 4.1: un
+pilastro verificato bene batte lavoro sparso): altri tipi di blocco
+Notion-standard, vedi 4.3 sotto (fatta subito dopo) — e un vero bookmark
+PDF/Word per il blocco TOC esportato (resta un elenco puntato semplice).
+
+### 4.3 `EMBED`, `DIAGRAM` (Mermaid), `COLUMN_LIST`/`COLUMN` — **fatta, 24 ago 2026**
+
+I tre tipi di blocco Notion-standard rimasti (oltre `TABLE_OF_CONTENTS`,
+4.2). Stesso pattern "segnaposto sentinella in `contentHtml`, sostituito
+da un passaggio successivo" già usato per TOC, esteso a due varianti
+nuove:
+
+**`EMBED`** — qualunque URL che renda in un iframe (Figma, Google Docs,
+Loom, Miro, CodePen, …), non legato a un provider specifico come già
+faceva `VIDEO`/YouTube. Link "Apri in una nuova scheda ↗" sempre
+presente, perché non c'è modo affidabile di sapere in anticipo se un
+host rifiuta di essere incorporato (`X-Frame-Options`) prima di
+provarci. `lib/blocks/serialize.ts` emette `⟦PROCEDURE_HUB_EMBED:<url>⟧`;
+il nuovo `lib/embedded-blocks.ts` (`injectEmbedIframes`) lo sostituisce
+con un `<iframe>` reale — puro HTML statico, nessun hydration
+client-side necessaria (stesso livello di fiducia che il nodo Youtube di
+Tiptap ottiene già per `VIDEO` nella stessa pipeline).
+
+**`DIAGRAM`** (Mermaid) — probabilmente il tipo di blocco con più valore
+reale per un "Procedure Hub": i flowchart per i processi di
+approvazione/escalation che le procedure già descrivono in prosa, ora
+disegnabili. Nuova dipendenza `mermaid`. Anteprima dal vivo nell'editor
+(`DiagramBlock` in `media-blocks.tsx`, import dinamico — mermaid
+richiede un DOM reale — con debounce 500ms per non ri-validare la
+sintassi a ogni tasto). Diversamente da `EMBED`, Mermaid richiede un
+browser vero per il layout: `serialize.ts` incorpora il sorgente
+codificato base64 nel segnaposto (sicuro contro l'escaping HTML del
+proprio nodo testo e contro caratteri speciali nel sorgente),
+`injectDiagramPlaceholders` lo trasforma in un `<pre
+class="mermaid-source">` provvisorio, e il nuovo componente client
+`components/procedures/mermaid-renderer.tsx` (montato una volta sulla
+pagina procedura) lo trova dopo il mount e lo sostituisce con l'SVG
+reale. **Verificato dal vivo con un'attenzione in più**: un primo giro
+con un'attesa di 1.5s dopo il caricamento della pagina pubblicata
+mostrava lo stub "Caricamento diagramma…" ancora presente — non un bug,
+semplicemente l'import dinamico di un pacchetto client pesante non
+aveva ancora finito; con 4s di attesa l'SVG compare correttamente. Non
+un problema in produzione (il caricamento del bundle mermaid è una
+tantum per sessione browser), ma buono da sapere per chi verifica di
+nuovo con Playwright: non affidarsi a un'attesa fissa breve dopo un
+primo caricamento a freddo.
+
+**`COLUMN_LIST`/`COLUMN`** — già flatten-at-publish da prima (vedi sopra
+in questo piano), ma **mai renderizzabile/inseribile nell'editor
+live** fino ad ora. `block-renderer.tsx`: `COLUMN_LIST` come riga
+`grid` (una colonna per ogni `COLUMN` figlio), `COLUMN` come stack
+verticale con un proprio "+ Aggiungi blocco" — la prima vera necessità
+in questo codebase di aggiungere un blocco come *figlio* di un blocco
+esistente invece che come fratello dopo di esso (il "+" per-blocco
+esistente inserisce sempre un fratello). Nuovo `onAddChild` in
+`block-editor.tsx`; `/colonne` crea un `COLUMN_LIST` con 2 `COLUMN`
+vuote (default Notion per "dividi in colonne"). Il menu "⋮" per-blocco
+nasconde Duplica/Trasforma-in su questi due tipi (semantica non chiara
+per un contenitore di layout: duplicare non copierebbe i figli,
+comunque una limitazione nota di `onDuplicate`; trasformare un
+`COLUMN_LIST` in un'intestazione orfanizzerebbe le sue `COLUMN` — restano
+comunque puntate a un blocco che non è più quello) — Elimina resta,
+unico modo per rimuovere un layout.
+
+**Bug reale trovato costruendo questo pezzo, non specifico alle
+colonne**: `handleDeleteImpl`/`handleBackspaceEmptyImpl`
+(`block-editor.tsx`) rimuovevano dallo stato client solo i figli
+*diretti* del blocco eliminato — il database cascata correttamente ogni
+discendente (`Block.parentBlockId` è `onDelete: Cascade`), ma un nipote
+(un blocco dentro una `COLUMN` la cui `COLUMN_LIST` viene eliminata)
+sopravviveva nello stato React e si ri-agganciava come blocco radice
+orfano nell'albero renderizzato, finché non si ricaricava la pagina.
+Corretto con un nuovo `collectDescendantIds()` condiviso (rimozione
+ricorsiva reale, non solo un livello) — colpisce anche
+`TOGGLE_LIST_ITEM`/liste annidate pre-esistenti, non solo `COLUMN_LIST`.
+
+Verificato dal vivo (Playwright): inserimento dei tre tipi via slash
+command su una procedura duplicata con contenuto reale, diagramma
+Mermaid con anteprima live nell'editor (flowchart reale con nodi e
+frecce, non solo testo), due colonne con contenuto indipendente in
+ciascuna, pubblicazione e conferma che la pagina letta mostri l'iframe
+reale, l'SVG del diagramma renderizzato (non il segnaposto), il
+contenuto delle colonne (flatten, come da comportamento esistente) — e
+nessun testo sentinella (`PROCEDURE_HUB_EMBED`/`_DIAGRAM`) trapelato,
+né nella pagina né nell'export PDF/Word/Excel (`lib/export/content-blocks.ts`
+riconosce lo stesso marcatore Diagram ed esporta il sorgente Mermaid
+come blocco di codice etichettato, non il marcatore grezzo). `npx tsc
+--noEmit` pulito, `npm test` 56/56 (7 nuovi su
+`injectEmbedIframes`/`injectDiagramPlaceholders`). Dati di test rimossi
+a fine verifica.
+
+### 4.4 Segnalibri PDF/Word reali per il blocco TOC — **fatta, 24 ago 2026**
+
+Fino a 4.2, il blocco `TABLE_OF_CONTENTS` nell'export PDF/Word era una
+lista puntata con lo stesso testo dei titoli — un indice "di aspetto",
+non navigabile: non un collegamento reale a nessuna pagina/posizione.
+Questa voce lo rende un vero indice: nel PDF, ogni voce diventa un link
+interno cliccabile verso il titolo corrispondente e ogni titolo compare
+nel pannello segnalibri del lettore PDF (`/Outlines`, il pannello che si
+apre di lato in Acrobat/anteprima del browser); in Word, ogni titolo
+diventa un `Bookmark` nativo e ogni voce dell'indice un
+`InternalHyperlink` verso quel segnalibro (oltre al Navigation Pane di
+Word, che già funzionava prima perché legge direttamente gli stili
+Heading 1/2/3 — questo lavoro riguarda solo le voci *del blocco indice
+stesso*).
+
+`lib/export/content-blocks.ts` — unica fonte di verità condivisa da
+tutti e tre gli export — non produce più `listItem` per il segnaposto
+TOC ma un nuovo `ExportBlock` dedicato, `tocEntry`, con un
+`headingIndex`: la posizione 0-based di quel titolo tra *tutti* i blocchi
+`heading` del documento, nell'ordine in cui compaiono. `pdf.ts` e
+`docx.ts` assegnano un segnalibro/destinazione a ogni intestazione
+proprio in quell'ordine (un contatore locale in ciascuno), quindi le due
+numerazioni combaciano sempre senza che `content-blocks.ts` debba sapere
+nulla degli interni di PDF/Word. `xlsx.ts` (nessuna paginazione, nessun
+segnalibro possibile in un foglio di calcolo) renderizza `tocEntry` come
+prima, semplice testo indentato — fuori scope su richiesta esplicita
+(solo PDF/Word).
+
+**PDF** — `pdf-lib` (v1.17.1) non espone un'API alto livello per
+outline/bookmark: nuovo `lib/export/pdf-bookmarks.ts` costruisce
+l'albero `/Outlines` a mano sul `PDFContext` di basso livello
+(`nextRef`/`assign`/`obj`/`register`), con `Title`/`Parent`/`First`/
+`Last`/`Next`/`Prev`/`Count`/`Dest` per ogni nodo (annidamento reale: un
+H2 diventa figlio del H1 immediatamente precedente, non un fratello) e
+imposta `PageMode = UseOutlines` così il pannello si apre già visibile.
+Ogni voce del blocco TOC diventa in più un'annotazione `/Link` reale
+posizionata sopra il testo della voce (`Rect` calcolato dalla larghezza
+del testo disegnato), con `Dest` verso la stessa destinazione
+dell'intestazione. Un'insidia reale di `pdf-lib`: `context.obj()`
+converte una stringa JS semplice in un `PDFName`, non un `PDFString` —
+va bene per chiavi come `Type`/`Subtype`, ma un titolo di segnalibro con
+testo reale va costruito esplicitamente con `PDFHexString.fromText()`
+per una codifica UTF-16BE corretta (verificato leggendo l'implementazione
+di `obj()` in `node_modules/pdf-lib/cjs/core/PDFContext.js` — un titolo
+costruito con la stringa nuda sarebbe stato scritto come nome PDF, non
+come testo).
+
+**Word** — `docx` (v9.7.1) ha già `Bookmark`/`InternalHyperlink` nativi.
+Ogni intestazione viene avvolta in `new Bookmark({ id: \`heading_${n}\`,
+... })`; ogni `tocEntry` diventa un `InternalHyperlink({ anchor:
+\`heading_${headingIndex}\` })`. **Insidia reale della libreria scoperta
+verificando l'XML generato, non nel nostro codice**: `Bookmark` genera
+il proprio `w:id` numerico interno chiamando
+`bookmarkUniqueNumericIdGen()` dentro il *costruttore di ogni istanza*
+(`node_modules/docx/dist/index.cjs`), quindi ogni segnalibro nel
+documento riceve un contatore fresco che parte sempre da 1 — tutti i
+`w:bookmarkStart`/`w:bookmarkEnd` del documento finiscono con lo stesso
+`w:id="1"`, verificato ispezionando `word/document.xml` reale di un
+export con tre intestazioni. Questo viola lo schema OOXML (che prevede
+`w:id` univoco per documento) ma **non rompe la funzione reale**: Word
+risolve un `InternalHyperlink` per **nome** (`w:anchor`), non per id
+numerico, e i nostri segnalibri non sono mai annidati/sovrapposti (ogni
+coppia start/end racchiude solo il testo di un'intestazione, in
+sequenza) — quindi l'abbinamento start↔end resta comunque univoco per
+ordine, e la navigazione clic-sul-link funziona. Non è un bug nel nostro
+codice quindi non "corretto" (è interno a `node_modules/docx`), ma
+documentato qui perché rilevante se in futuro si annidassero segnalibri.
+
+Nuovi test (14, `npm test` passa da 56 a 70): `tests/export-content-blocks.test.ts`
+(7, `extractExportBlocks` puro — ordine/`headingIndex` delle voci TOC
+indipendentemente da dove il blocco TOC compare nel documento, fallback
+"Nessun titolo nel documento" senza intestazioni, più TOC indipendenti,
+nessun impatto su un documento senza TOC, e i test DIAGRAM pre-esistenti
+lasciati intatti), `tests/export-pdf-bookmarks.test.ts` (4, genera un PDF
+reale con `generateProcedurePdf` e lo ricarica con `PDFDocument.load()`
+di `pdf-lib` per ispezionare l'`/Outlines`/le annotazioni `/Link` vere
+scritte — non un mock), `tests/export-docx-bookmarks.test.ts` (3, genera
+un `.docx` reale, lo decomprime con `jszip` — nuova devDependency
+esplicita, per non affidarsi a una dipendenza transitiva non dichiarata
+di `docx` — e ispeziona `word/document.xml` grezzo). **Verificato anche
+dal vivo oltre ai test**, non solo con fixture sintetiche: duplicata una
+procedura reale, aggiunto un blocco TOC *prima* delle sue intestazioni
+esistenti (il caso più difficile — l'indice referenzia titoli che ancora
+non sono stati renderizzati), pubblicato, scaricati i file reali
+(`GET /api/procedures/[id]/export?format=pdf|docx`) e verificati con
+strumenti indipendenti da quelli usati per generarli: `pypdf` (libreria
+Python, installata per l'occasione) per il PDF — confermati 3 segnalibri
+nel pannello outline con i titoli corretti e 3 annotazioni `/Link` con
+`Dest` a tre posizioni Y distinte (non tutte uguali, cioè puntano
+davvero a intestazioni diverse); `unzip`+ispezione XML grezza per il
+`.docx` — confermati `w:bookmarkStart w:name="heading_0/1/2"` e
+`w:hyperlink w:anchor="heading_0/1/2"` corrispondenti. `npx tsc --noEmit`
+pulito, `npm test` 70/70. Dati di test rimossi a fine verifica (la
+`POST .../blocks/publish` e la `DELETE` sulla procedura di scarto hanno
+entrambe restituito 500 — stesso problema pre-esistente e innocuo di
+MeiliSearch non raggiungibile in questo sandbox dopo il commit della
+transazione DB, non una regressione: confermato sia leggendo lo stack
+trace in `dev.log` sia interrogando Postgres direttamente, che mostrava
+la nuova `ProcedureVersion` creata correttamente nel primo caso e la riga
+`Procedure` effettivamente sparita nel secondo).
 
 ---
 

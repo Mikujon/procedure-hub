@@ -18,6 +18,11 @@ export default defineConfig({
   test: {
     environment: "node",
     setupFiles: ["./tests/setup.ts"],
+    // Scoped to tests/ explicitly — Vitest's default include glob
+    // (**/*.{test,spec}.ts) would otherwise also pick up e2e/*.spec.ts,
+    // Playwright's suite, which Playwright's own test.describe() rejects
+    // when run under a different test runner.
+    include: ["tests/**/*.test.ts"],
     testTimeout: 20000,
     hookTimeout: 20000,
     // Real Postgres connections behind a shared singleton PrismaClient — keep

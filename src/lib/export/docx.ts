@@ -1,8 +1,10 @@
 import {
   AlignmentType,
+  Bookmark,
   BorderStyle,
   Document,
   HeadingLevel,
+  InternalHyperlink,
   Packer,
   Paragraph,
   ShadingType,
@@ -30,10 +32,30 @@ function listBullet(block: Extract<ExportBlock, { type: "listItem" }>): string {
   return "•";
 }
 
-function blockToParagraphs(block: ExportBlock): (Paragraph | Table)[] {
+/**
+ * `headingCounter` is mutated as we go (`.current++`) rather than derived
+ * from the block's own index in `input.blocks` — most blocks aren't
+ * headings, so a plain array index wouldn't match
+ * content-blocks.ts's headingIndex (which counts *headings* only, in
+ * document order). Each heading gets wrapped in a Bookmark named
+ * `heading_<n>`; a tocEntry links to it by that same name via
+ * InternalHyperlink. Word's own Navigation Pane already works for headings
+ * regardless of this — it reads directly from the Heading 1/2/3 styles
+ * applied below — this only makes the *exported TOC block's own entries*
+ * real, clickable links to their heading, instead of plain look-alike text.
+ */
+function blockToParagraphs(block: ExportBlock, headingCounter: { current: number }): (Paragraph | Table)[] {
   switch (block.type) {
-    case "heading":
-      return [new Paragraph({ text: block.text, heading: HEADING_LEVEL[block.level], spacing: { before: 240, after: 120 } })];
+    case "heading": {
+      const bookmarkId = `heading_${headingCounter.current++}`;
+      return [
+        new Paragraph({
+          heading: HEADING_LEVEL[block.level],
+          spacing: { before: 240, after: 120 },
+          children: [new Bookmark({ id: bookmarkId, children: [new TextRun(block.text)] })],
+        }),
+      ];
+    }
     case "paragraph":
       return [new Paragraph({ text: block.text, spacing: { after: 160 } })];
     case "quote":
@@ -101,6 +123,19 @@ function blockToParagraphs(block: ExportBlock): (Paragraph | Table)[] {
       );
       return [new Table({ rows, width: { size: 100, type: WidthType.PERCENTAGE } })];
     }
+    case "tocEntry":
+      return [
+        new Paragraph({
+          indent: { left: 360 + (block.level - 1) * 360 },
+          spacing: { after: 80 },
+          children: [
+            new InternalHyperlink({
+              anchor: `heading_${block.headingIndex}`,
+              children: [new TextRun({ text: block.text, color: "0E7C86", underline: {} })],
+            }),
+          ],
+        }),
+      ];
   }
 }
 
@@ -135,7 +170,8 @@ export async function generateProcedureDocx(input: ProcedureExportInput): Promis
     );
   }
 
-  const body = input.blocks.flatMap(blockToParagraphs);
+  const headingCounter = { current: 0 };
+  const body = input.blocks.flatMap((block) => blockToParagraphs(block, headingCounter));
 
   const doc = new Document({
     creator: "Procedure Hub",

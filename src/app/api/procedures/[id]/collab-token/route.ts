@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import jwt from "jsonwebtoken";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { canEditProcedure, canViewProcedure } from "@/lib/permissions";
+import { canMutateProcedureContent, canViewProcedure } from "@/lib/permissions";
 
 /**
  * Mints a short-lived JWT the client hands to collab-server (a separate
@@ -28,7 +28,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const canEdit = await canEditProcedure({ id: userId, tenantId, globalRole }, procedure.departmentId);
+  const canEdit = await canMutateProcedureContent({ id: userId, tenantId, globalRole }, procedure);
 
   const secret = process.env.COLLAB_JWT_SECRET;
   if (!secret) {

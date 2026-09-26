@@ -15,7 +15,13 @@ import type { BlockType } from "@prisma/client";
 import { Plus } from "lucide-react";
 import { useCollaborativeEditor } from "@/hooks/use-collaborative-editor";
 import { BlockRenderer } from "./block-renderer";
-import type { ClientBlock } from "./types";
+import { extractPlainText, type ClientBlock, type DocumentHeading } from "./types";
+
+const HEADING_LEVEL: Partial<Record<BlockType, 1 | 2 | 3>> = {
+  HEADING_1: 1,
+  HEADING_2: 2,
+  HEADING_3: 3,
+};
 
 type FlatBlock = Omit<ClientBlock, "children">;
 
@@ -79,10 +85,45 @@ function defaultContentFor(type: BlockType): any {
       return { url: "" };
     case "TABLE_SIMPLE":
       return { rows: [["", ""], ["", ""]] };
+    case "EMBED":
+      return { url: "", caption: "" };
+    case "DIAGRAM":
+      return { code: "" };
     case "DIVIDER":
-      return {};
+    case "TABLE_OF_CONTENTS":
+    case "COLUMN_LIST":
+    case "COLUMN":
+      return {}; // no text of its own — TOC's list is computed live from sibling heading blocks (see documentHeadings below); COLUMN_LIST/COLUMN are pure layout containers
     default:
       return { text: [] };
+  }
+}
+
+/** A block and every descendant beneath it (children, grandchildren, …) — the DB cascades all of these on delete (Block.parentBlockId is onDelete: Cascade), so client state has to remove the same set or a grandchild (e.g. a block inside a COLUMN whose COLUMN_LIST just got deleted) would render as a stray root block until the next reload. */
+function collectDescendantIds(flat: FlatBlock[], rootId: string): Set<string> {
+  const ids = new Set([rootId]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const b of flat) {
+      if (b.parentBlockId && ids.has(b.parentBlockId) && !ids.has(b.id)) {
+        ids.add(b.id);
+        grew = true;
+      }
+    }
+  }
+  return ids;
+}
+
+/** Seeds a freshly-inserted COLUMN_LIST with `count` empty COLUMN children — a bare COLUMN_LIST has nothing to lay out side by side, so the "Colonne" slash command always gets 2 (Notion's own default for "split into columns"). Free function, not a hook: called from inside handleSelectBlockTypeImpl's own setFlat updater, where hooks can't be called. */
+function createColumns(createBlockEndpoint: string, columnListId: string, count: number, onCreated: (block: any) => void) {
+  for (let i = 0; i < count; i++) {
+    api(createBlockEndpoint, {
+      method: "POST",
+      body: JSON.stringify({ type: "COLUMN", content: {}, parentBlockId: columnListId, sortOrder: i }),
+    })
+      .then(({ block }) => onCreated(block))
+      .catch(() => {});
   }
 }
 
@@ -118,7 +159,10 @@ function SortableItem({
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: block.id });
   const style = { transform: CSS.Transform.toString(transform), transition };
   return (
-    <div ref={setNodeRef} style={style}>
+    // data-block-id is only read by a TABLE_OF_CONTENTS block's click-to-scroll
+    // (block-renderer.tsx) — a plain DOM lookup, not part of dnd-kit's own
+    // node ref, so it's safe to add here alongside it.
+    <div ref={setNodeRef} style={style} data-block-id={block.id}>
       <BlockRenderer block={block} dragHandleProps={{ ...attributes, ...listeners }} {...rest} />
     </div>
   );
@@ -127,11 +171,27 @@ function SortableItem({
 export function BlockEditor({ parent, initialBlocks, editable, collabToken, user }: BlockEditorProps) {
   const [flat, setFlat] = useState<FlatBlock[]>(() => flattenTree(initialBlocks));
   const collabProcedureId = parent.type === "procedure" ? parent.id : "";
-  const { doc, provider, getFragment } = useCollaborativeEditor({ procedureId: collabProcedureId, token: collabToken });
+  const { doc, provider, getFragment, status: collabStatus } = useCollaborativeEditor({ procedureId: collabProcedureId, token: collabToken });
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   const createBlockEndpoint = parent.type === "procedure" ? `/api/procedures/${parent.id}/blocks` : `/api/pages/${parent.id}/blocks`;
 
   const tree = useMemo(() => buildClientTree(flat), [flat]);
+
+  // Top-level only — same scope Notion's own TOC block uses, and matches
+  // what lib/toc.ts lists for the floating reading outline at publish time
+  // (that one walks the rendered HTML's h1-3 tags, this walks the live
+  // block tree; both stay document-level, never nested-block headings).
+  const documentHeadings: DocumentHeading[] = useMemo(
+    () =>
+      tree
+        .filter((b): b is ClientBlock & { type: "HEADING_1" | "HEADING_2" | "HEADING_3" } => b.type in HEADING_LEVEL)
+        .map((b) => ({
+          blockId: b.id,
+          level: HEADING_LEVEL[b.type]!,
+          text: extractPlainText(b.content?.text) || "(senza titolo)",
+        })),
+    [tree]
+  );
 
   const handleTextChangeImpl = useCallback((blockId: string, text: any[]) => {
     // PATCH replaces the whole Json `content` column (no server-side merge),
@@ -154,7 +214,10 @@ export function BlockEditor({ parent, initialBlocks, editable, collabToken, user
   }, []);
 
   const handleDeleteImpl = useCallback((blockId: string) => {
-    setFlat((prev) => prev.filter((b) => b.id !== blockId && b.parentBlockId !== blockId));
+    setFlat((prev) => {
+      const idsToRemove = collectDescendantIds(prev, blockId);
+      return prev.filter((b) => !idsToRemove.has(b.id));
+    });
     api(`/api/blocks/${blockId}`, { method: "DELETE" }).catch(() => {});
   }, []);
 
@@ -190,6 +253,14 @@ export function BlockEditor({ parent, initialBlocks, editable, collabToken, user
                 sortOrder: block.sortOrder,
               },
             ]);
+            if (type === "COLUMN_LIST") {
+              createColumns(createBlockEndpoint, block.id, 2, (column) => {
+                setFlat((cur) => [
+                  ...cur,
+                  { id: column.id, type: column.type, content: column.content, parentBlockId: column.parentBlockId, sortOrder: column.sortOrder },
+                ]);
+              });
+            }
           })
           .catch(() => {});
 
@@ -206,10 +277,84 @@ export function BlockEditor({ parent, initialBlocks, editable, collabToken, user
 
   const handleBackspaceEmptyImpl = useCallback(
     (blockId: string) => {
-      setFlat((prev) => (prev.length <= 1 ? prev : prev.filter((b) => b.id !== blockId && b.parentBlockId !== blockId)));
+      setFlat((prev) => {
+        if (prev.length <= 1) return prev;
+        const idsToRemove = collectDescendantIds(prev, blockId);
+        return prev.filter((b) => !idsToRemove.has(b.id));
+      });
       api(`/api/blocks/${blockId}`, { method: "DELETE" }).catch(() => {});
     },
     []
+  );
+
+  /** "Duplica blocco" (per-block ⋮ menu) — same insert-after shape as handleSelectBlockTypeImpl, but carries the source block's own content/type instead of a fresh default. Nested children aren't copied (rare in practice — only TOGGLE_LIST_ITEM and list items nest today — and doubling the recursion here isn't worth it for a first pass). */
+  const handleDuplicateImpl = useCallback(
+    (blockId: string) => {
+      setFlat((prev) => {
+        const source = prev.find((b) => b.id === blockId);
+        if (!source) return prev;
+        const insertOrder = source.sortOrder + 1;
+        const shifted = prev.map((b) =>
+          b.parentBlockId === source.parentBlockId && b.sortOrder >= insertOrder && b.id !== source.id
+            ? { ...b, sortOrder: b.sortOrder + 1 }
+            : b
+        );
+
+        api(createBlockEndpoint, {
+          method: "POST",
+          body: JSON.stringify({
+            type: source.type,
+            content: source.content,
+            parentBlockId: source.parentBlockId,
+            sortOrder: insertOrder,
+          }),
+        })
+          .then(({ block }) => {
+            setFlat((cur) => [
+              ...cur,
+              {
+                id: block.id,
+                type: block.type,
+                content: block.content,
+                parentBlockId: block.parentBlockId,
+                sortOrder: block.sortOrder,
+              },
+            ]);
+          })
+          .catch(() => {});
+
+        return shifted;
+      });
+    },
+    [createBlockEndpoint]
+  );
+
+  /** "Trasforma in" (per-block ⋮ menu) — changes a block's type in place, keeping its content (e.g. a paragraph's text survives becoming a heading). Distinct from the slash command, which always inserts a new block instead. */
+  const handleTurnIntoImpl = useCallback((blockId: string, type: BlockType) => {
+    setFlat((prev) => prev.map((b) => (b.id === blockId ? { ...b, type } : b)));
+    api(`/api/blocks/${blockId}`, { method: "PATCH", body: JSON.stringify({ type }) }).catch(() => {});
+  }, []);
+
+  /** "+ Aggiungi blocco" inside an empty COLUMN — unlike handleSelectBlockTypeImpl (always inserts a *sibling* after an existing block), this adds a block as a *child* of `parentBlockId` regardless of what's already there, appended after however many children it already has. The only other place blocks gain children today (TOGGLE_LIST_ITEM, nested lists) does it via the lazy backfill/import pipeline, not a live "add" action — COLUMN is the first block type that needs one. */
+  const handleAddChildImpl = useCallback(
+    (parentBlockId: string, type: BlockType) => {
+      setFlat((prev) => {
+        const siblingCount = prev.filter((b) => b.parentBlockId === parentBlockId).length;
+        api(createBlockEndpoint, {
+          method: "POST",
+          body: JSON.stringify({ type, content: defaultContentFor(type), parentBlockId, sortOrder: siblingCount }),
+        })
+          .then(({ block }) => {
+            setFlat((cur) => [
+              ...cur,
+              { id: block.id, type: block.type, content: block.content, parentBlockId: block.parentBlockId, sortOrder: block.sortOrder },
+            ]);
+          })
+          .catch(() => {});
+        return prev;
+      });
+    },
+    [createBlockEndpoint]
   );
 
   // Stable identities for everything handed down into a per-block Tiptap
@@ -220,6 +365,9 @@ export function BlockEditor({ parent, initialBlocks, editable, collabToken, user
   const onEnter = useStableCallback(handleEnterImpl);
   const onBackspaceEmpty = useStableCallback(handleBackspaceEmptyImpl);
   const onDelete = useStableCallback(handleDeleteImpl);
+  const onDuplicate = useStableCallback(handleDuplicateImpl);
+  const onTurnInto = useStableCallback(handleTurnIntoImpl);
+  const onAddChild = useStableCallback(handleAddChildImpl);
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
@@ -278,7 +426,7 @@ export function BlockEditor({ parent, initialBlocks, editable, collabToken, user
 
   return (
     <div className="space-y-0.5 rounded-lg border border-border bg-card p-4">
-      {collabToken && !doc && (
+      {collabToken && !doc && collabStatus === "connecting" && (
         <p className="pb-2 text-xs text-muted-foreground">Connessione alla sessione collaborativa…</p>
       )}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -298,6 +446,10 @@ export function BlockEditor({ parent, initialBlocks, editable, collabToken, user
               onEnter={onEnter}
               onBackspaceEmpty={onBackspaceEmpty}
               onDelete={onDelete}
+              onDuplicate={onDuplicate}
+              onTurnInto={onTurnInto}
+              documentHeadings={documentHeadings}
+              onAddChild={onAddChild}
             />
           ))}
         </SortableContext>

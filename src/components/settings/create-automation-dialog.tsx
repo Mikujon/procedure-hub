@@ -25,12 +25,14 @@ const ACTION_OPTIONS = [
   { value: "SEND_NOTIFICATION", label: "Invia una notifica" },
   { value: "CHANGE_PROCEDURE_STATUS", label: "Archivia la procedura" },
   { value: "SEND_WEBHOOK", label: "Chiama un webhook (Teams, Jira, ServiceNow, ...)" },
+  { value: "ESCALATE_ACK_TO_MANAGERS", label: "Segnala ai manager chi non ha confermato la lettura" },
 ];
 
 const RECIPIENT_OPTIONS = [
   { value: "OWNER", label: "Il proprietario della procedura" },
   { value: "DEPARTMENT", label: "Il dipartimento (tutta l'azienda se critica/richiede conferma)" },
   { value: "TENANT", label: "Tutta l'azienda" },
+  { value: "ACK_OUTSTANDING", label: "Chi non ha ancora confermato la lettura (solo su questo trigger)" },
 ];
 
 /** Admin-only "Nuova regola" form — the UI for POST /api/admin/automations. Deliberately not a visual rule builder: fixed trigger/condition/action shapes, matching the v1 scope in the redesign/automations plan. */
@@ -46,7 +48,9 @@ export function CreateAutomationDialog({ onClose, onCreated }: { onClose: () => 
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [recipients, setRecipients] = useState("OWNER");
+  const [externalChannels, setExternalChannels] = useState(true);
   const [webhookUrl, setWebhookUrl] = useState("");
+  const [webhookAuthHeader, setWebhookAuthHeader] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -81,10 +85,12 @@ export function CreateAutomationDialog({ onClose, onCreated }: { onClose: () => 
             : {};
       const actionConfig =
         actionType === "SEND_NOTIFICATION"
-          ? { title: title.trim(), body: body.trim() || undefined, recipients }
+          ? { title: title.trim(), body: body.trim() || undefined, recipients, externalChannels }
           : actionType === "SEND_WEBHOOK"
-            ? { url: webhookUrl.trim() }
-            : { status: "ARCHIVED" };
+            ? { url: webhookUrl.trim(), authHeader: webhookAuthHeader.trim() || undefined }
+            : actionType === "ESCALATE_ACK_TO_MANAGERS"
+              ? {}
+              : { status: "ARCHIVED" };
 
       const conditions =
         onlyCritical || requiredTags.length > 0
@@ -225,8 +231,13 @@ export function CreateAutomationDialog({ onClose, onCreated }: { onClose: () => 
                 <input
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
+                  placeholder='es. "{{procedureTitle}}" richiede attenzione'
                   className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm outline-none focus:border-primary"
                 />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  <code>{"{{procedureTitle}}"}</code> nel titolo o nel messaggio viene sostituito con il titolo
+                  della procedura.
+                </p>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">Messaggio (opzionale)</label>
@@ -248,7 +259,19 @@ export function CreateAutomationDialog({ onClose, onCreated }: { onClose: () => 
                   ))}
                 </select>
               </div>
+              <label className="flex items-center gap-1.5 text-sm">
+                <input type="checkbox" checked={externalChannels} onChange={(e) => setExternalChannels(e.target.checked)} />
+                Invia anche su Slack/Google Chat/Teams (oltre alla notifica in-app)
+              </label>
             </>
+          )}
+
+          {actionType === "ESCALATE_ACK_TO_MANAGERS" && (
+            <p className="text-xs text-muted-foreground">
+              Nessuna configurazione necessaria — funziona solo insieme al trigger &quot;campagna di conferma
+              lettura aperta da N giorni&quot; qui sopra: raggruppa chi non ha ancora confermato per manager (o per
+              proprietario della procedura, se senza manager) e invia un messaggio a ciascuno.
+            </p>
           )}
 
           {actionType === "SEND_WEBHOOK" && (
@@ -263,6 +286,26 @@ export function CreateAutomationDialog({ onClose, onCreated }: { onClose: () => 
               <p className="mt-1 text-[11px] text-muted-foreground">
                 Riceve un POST JSON con i dati della procedura — l'URL di un incoming webhook di Teams, Jira,
                 ServiceNow o un endpoint personalizzato.
+              </p>
+            </div>
+          )}
+
+          {actionType === "SEND_WEBHOOK" && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Header Authorization (opzionale)
+              </label>
+              <input
+                type="password"
+                value={webhookAuthHeader}
+                onChange={(e) => setWebhookAuthHeader(e.target.value)}
+                placeholder="Bearer ... oppure Basic ..."
+                className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm outline-none focus:border-primary"
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Serve solo per chiamare direttamente le API di Jira/ServiceNow/Freshdesk (richiedono
+                autenticazione su ogni richiesta) — un incoming webhook di Teams/Slack/Jira Automation porta
+                già il proprio segreto nell&apos;URL e non ne ha bisogno.
               </p>
             </div>
           )}

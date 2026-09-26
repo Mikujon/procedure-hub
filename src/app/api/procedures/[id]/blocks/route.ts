@@ -4,7 +4,7 @@ import { z } from "zod";
 import { BlockType } from "@prisma/client";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { canEditProcedure, canViewProcedure } from "@/lib/permissions";
+import { canMutateProcedureContent, canViewProcedure } from "@/lib/permissions";
 import { buildBlockTree } from "@/lib/blocks/tree";
 import { createBlocksFromProseMirrorDoc, type PMNode } from "@/lib/blocks/from-prosemirror";
 import { blockParentWhere, blockParentCreateData } from "@/lib/blocks/parent";
@@ -68,8 +68,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const allowed = await canEditProcedure({ id: userId, tenantId, globalRole }, existing.departmentId);
-  if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const allowed = await canMutateProcedureContent({ id: userId, tenantId, globalRole }, existing);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: existing.isLocked ? "Questa pagina è bloccata" : "Forbidden" },
+      { status: existing.isLocked ? 423 : 403 }
+    );
+  }
 
   const parsed = createSchema.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });

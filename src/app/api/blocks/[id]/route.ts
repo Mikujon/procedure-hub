@@ -6,6 +6,11 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canEditBlockParent } from "@/lib/permissions";
 
+/** True when the block's owning Procedure (direct, or via a promoted Page) has "Blocca pagina" set — just for picking 423 vs 403 on a denied request, canEditBlockParent already enforces the rule itself. */
+function ownerIsLocked(existing: { procedure: { isLocked: boolean } | null; page: { procedure: { isLocked: boolean } | null } | null }) {
+  return Boolean(existing.procedure?.isLocked ?? existing.page?.procedure?.isLocked);
+}
+
 const updateSchema = z.object({
   type: z.nativeEnum(BlockType).optional(),
   content: z.any().optional(),
@@ -31,7 +36,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   const allowed = await canEditBlockParent({ id: userId, tenantId, globalRole }, existing);
-  if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!allowed) {
+    const locked = ownerIsLocked(existing);
+    return NextResponse.json({ error: locked ? "Questa pagina è bloccata" : "Forbidden" }, { status: locked ? 423 : 403 });
+  }
 
   const parsed = updateSchema.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
@@ -84,7 +92,10 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   }
 
   const allowed = await canEditBlockParent({ id: userId, tenantId, globalRole }, existing);
-  if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!allowed) {
+    const locked = ownerIsLocked(existing);
+    return NextResponse.json({ error: locked ? "Questa pagina è bloccata" : "Forbidden" }, { status: locked ? 423 : 403 });
+  }
 
   await prisma.$transaction(async (tx) => {
     await tx.block.delete({ where: { id: params.id } });

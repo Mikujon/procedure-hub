@@ -1,6 +1,7 @@
 import { prisma } from "../prisma";
 import { sendSlackNotification } from "./slack";
 import { sendGoogleChatNotification } from "./gchat";
+import { sendTeamsNotification } from "./teams";
 import { buildAckConfirmUrl } from "../ack-token";
 import type { NotificationFanoutJob } from "../notifications-queue";
 
@@ -15,9 +16,10 @@ import type { NotificationFanoutJob } from "../notifications-queue";
 export async function processNotificationFanout(job: NotificationFanoutJob): Promise<void> {
   const linkUrl = job.linkUrl;
 
-  const [slackIntegration, gchatIntegration, allPrefs] = await Promise.all([
+  const [slackIntegration, gchatIntegration, teamsIntegration, allPrefs] = await Promise.all([
     prisma.integration.findUnique({ where: { tenantId_type: { tenantId: job.tenantId, type: "SLACK" } } }),
     prisma.integration.findUnique({ where: { tenantId_type: { tenantId: job.tenantId, type: "GOOGLE_CHAT" } } }),
+    prisma.integration.findUnique({ where: { tenantId_type: { tenantId: job.tenantId, type: "MICROSOFT_TEAMS" } } }),
     prisma.notificationPreference.findMany({ where: { userId: { in: job.recipientIds } } }),
   ]);
   const prefsByUserId = new Map(allPrefs.map((p) => [p.userId, p]));
@@ -32,7 +34,7 @@ export async function processNotificationFanout(job: NotificationFanoutJob): Pro
       // anyone with the link could acknowledge on someone else's behalf),
       // and channel-specific so the certificate (Fase 4) can show which
       // surface each confirmation actually came through.
-      const ackPayload = (channel: "SLACK" | "GOOGLE_CHAT") =>
+      const ackPayload = (channel: "SLACK" | "GOOGLE_CHAT" | "TEAMS") =>
         ackContext ? buildAckConfirmUrl({ userId, procedureId: ackContext.procedureId, versionNumber: ackContext.versionNumber, channel }) : undefined;
 
       if (slackIntegration?.isEnabled && (prefs?.slackEnabled ?? true)) {
@@ -44,6 +46,12 @@ export async function processNotificationFanout(job: NotificationFanoutJob): Pro
       if (gchatIntegration?.isEnabled && (prefs?.gchatEnabled ?? false)) {
         sends.push(
           sendGoogleChatNotification({ integration: gchatIntegration, userId, title: job.title, body: job.body, linkUrl, confirmUrl: ackPayload("GOOGLE_CHAT") })
+        );
+      }
+
+      if (teamsIntegration?.isEnabled && (prefs?.teamsEnabled ?? false)) {
+        sends.push(
+          sendTeamsNotification({ integration: teamsIntegration, userId, title: job.title, body: job.body, linkUrl, confirmUrl: ackPayload("TEAMS") })
         );
       }
 

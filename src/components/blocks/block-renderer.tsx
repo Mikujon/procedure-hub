@@ -5,10 +5,21 @@ import Link from "next/link";
 import type { HocuspocusProvider } from "@hocuspocus/provider";
 import type * as Y from "yjs";
 import type { BlockType } from "@prisma/client";
-import { ChevronRight, GripVertical, Trash2, FileText } from "lucide-react";
-import type { ClientBlock } from "./types";
+import { ChevronRight, GripVertical, Plus, MoreHorizontal, Copy, Trash2, FileText, ListTree } from "lucide-react";
+import type { ClientBlock, DocumentHeading } from "./types";
 import { InlineRichText } from "./inline-rich-text";
-import { CodeBlock, DividerBlock, ImageBlock, TableSimpleBlock, VideoBlock } from "./media-blocks";
+import { CodeBlock, DiagramBlock, DividerBlock, EmbedBlock, ImageBlock, TableSimpleBlock, VideoBlock } from "./media-blocks";
+import { BLOCK_COMMANDS } from "./slash-command-menu";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface BlockRendererProps {
   block: ClientBlock;
@@ -24,8 +35,22 @@ interface BlockRendererProps {
   onEnter: (blockId: string) => void;
   onBackspaceEmpty: (blockId: string) => void;
   onDelete: (blockId: string) => void;
+  onDuplicate: (blockId: string) => void;
+  onTurnInto: (blockId: string, type: BlockType) => void;
+  /** Document-level H1/H2/H3, computed once in block-editor.tsx — only read by a TABLE_OF_CONTENTS block. */
+  documentHeadings: DocumentHeading[];
+  /** Adds a block as a *child* of `parentBlockId` (not a sibling after it, like onSelectBlockType) — only COLUMN uses this today, for its own "+ Aggiungi blocco". */
+  onAddChild: (parentBlockId: string, type: BlockType) => void;
   dragHandleProps?: any;
 }
+
+/** "Trasforma in" (per-block ⋮ menu) offers only text-shaped blocks — reusing BLOCK_COMMANDS' full catalogue (icons/labels stay in one place) but leaving out media/structural types (IMAGE, VIDEO, CODE, TABLE_SIMPLE, DIVIDER) that aren't a sensible target for turning an existing block's content into. */
+const TURN_INTO_TYPES: BlockType[] = [
+  "PARAGRAPH", "HEADING_1", "HEADING_2", "HEADING_3",
+  "BULLETED_LIST_ITEM", "NUMBERED_LIST_ITEM", "CHECKLIST_ITEM", "TOGGLE_LIST_ITEM",
+  "QUOTE", "CALLOUT",
+];
+const TURN_INTO_ITEMS = BLOCK_COMMANDS.filter((c) => TURN_INTO_TYPES.includes(c.type));
 
 // font-serif here (pre-Control Room) meant headings typed *inside* content
 // never picked up the brand's own display face — everything around the
@@ -37,7 +62,7 @@ const HEADING_CLASS: Partial<Record<BlockType, string>> = {
 };
 
 export function BlockRenderer(props: BlockRendererProps) {
-  const { block, editable, getFragment, provider, user, onTextChange, onContentChange, onSelectBlockType, onEnter, onBackspaceEmpty, onDelete } = props;
+  const { block, editable, getFragment, provider, user, onTextChange, onContentChange, onSelectBlockType, onEnter, onBackspaceEmpty, onDelete, onDuplicate, onTurnInto, documentHeadings, onAddChild } = props;
   const [toggleOpen, setToggleOpen] = useState(true);
 
   const text = () => (
@@ -123,6 +148,36 @@ export function BlockRenderer(props: BlockRendererProps) {
         </div>
       );
       break;
+    case "TABLE_OF_CONTENTS":
+      body = (
+        <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
+          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <ListTree className="h-3.5 w-3.5" /> Indice del documento
+          </div>
+          {documentHeadings.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nessun titolo nel documento — aggiungine uno per popolare l&apos;indice.</p>
+          ) : (
+            <nav className="space-y-0.5">
+              {documentHeadings.map((h) => (
+                <button
+                  key={h.blockId}
+                  type="button"
+                  onClick={() =>
+                    document
+                      .querySelector(`[data-block-id="${h.blockId}"]`)
+                      ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                  }
+                  style={{ paddingLeft: `${(h.level - 1) * 0.9}rem` }}
+                  className="block w-full truncate text-left text-sm text-primary hover:underline"
+                >
+                  {h.text}
+                </button>
+              ))}
+            </nav>
+          )}
+        </div>
+      );
+      break;
     case "DIVIDER":
       body = <DividerBlock />;
       break;
@@ -137,6 +192,53 @@ export function BlockRenderer(props: BlockRendererProps) {
       break;
     case "TABLE_SIMPLE":
       body = <TableSimpleBlock content={block.content ?? {}} editable={editable} onChange={(c) => onContentChange(block.id, c)} />;
+      break;
+    case "EMBED":
+      body = <EmbedBlock content={block.content ?? {}} editable={editable} onChange={(c) => onContentChange(block.id, c)} />;
+      break;
+    case "DIAGRAM":
+      body = <DiagramBlock content={block.content ?? {}} editable={editable} onChange={(c) => onContentChange(block.id, c)} />;
+      break;
+    case "COLUMN_LIST":
+      // Renders its own children as a side-by-side row — each COLUMN owns
+      // its own vertical stack (case below). Deliberately not part of the
+      // generic showChildrenInline path further down (that indents
+      // children as a single vertical list, wrong for a layout row).
+      body = (
+        <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${Math.max(block.children.length, 1)}, minmax(0, 1fr))` }}>
+          {block.children.map((column) => (
+            <BlockRenderer key={column.id} {...props} block={column} />
+          ))}
+        </div>
+      );
+      break;
+    case "COLUMN":
+      // Only ever rendered as a COLUMN_LIST child (above) — its own
+      // vertical stack of blocks, plus its own "+ Aggiungi blocco" since an
+      // empty column has no existing block to hover for the usual per-block
+      // "+" (that inserts a *sibling*, useless with nothing to be a sibling
+      // of — see onAddChild's doc comment in block-editor.tsx).
+      body = (
+        <div className="min-w-0 space-y-1 rounded-md border border-dashed border-border/60 p-2">
+          {block.children.map((child, i) => (
+            <BlockRenderer
+              key={child.id}
+              {...props}
+              block={child}
+              numberedIndex={child.type === "NUMBERED_LIST_ITEM" ? i + 1 : undefined}
+            />
+          ))}
+          {editable && (
+            <button
+              type="button"
+              onClick={() => onAddChild(block.id, "PARAGRAPH")}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <Plus className="h-3 w-3" /> Aggiungi blocco
+            </button>
+          )}
+        </div>
+      );
       break;
     case "PAGE_LINK":
       body = (
@@ -153,8 +255,7 @@ export function BlockRenderer(props: BlockRendererProps) {
       );
       break;
     default:
-      // COLUMN_LIST, COLUMN, EMBED, DIAGRAM, AUDIO, FILE, TABLE_OF_CONTENTS,
-      // SYNCED_BLOCK_*: not yet supported by this editor pass —
+      // AUDIO, FILE, SYNCED_BLOCK_*: not yet supported by this editor pass —
       // shown as a placeholder rather than crashing, deletable so it
       // doesn't block editing the rest of the page.
       body = (
@@ -168,7 +269,11 @@ export function BlockRenderer(props: BlockRendererProps) {
   // indented beneath, same as TOGGLE_LIST_ITEM above but without a collapse
   // toggle — only reorder within a level is supported for now, not
   // cross-level drag; nested children keep their stored order as-is.
-  const showChildrenInline = block.type !== "TOGGLE_LIST_ITEM" && block.children.length > 0;
+  // COLUMN_LIST/COLUMN render their own children explicitly above (a side-by-
+  // side row, not an indented vertical list) — excluded here to avoid
+  // rendering every column's contents a second time.
+  const showChildrenInline =
+    block.type !== "TOGGLE_LIST_ITEM" && block.type !== "COLUMN_LIST" && block.type !== "COLUMN" && block.children.length > 0;
 
   return (
     <div className="group relative flex gap-1 py-0.5">
@@ -196,13 +301,59 @@ export function BlockRenderer(props: BlockRendererProps) {
         )}
       </div>
       {editable && (
-        <button
-          type="button"
-          onClick={() => onDelete(block.id)}
-          className="mt-1 shrink-0 text-transparent hover:text-destructive group-hover:text-muted-foreground"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
+        <div className="flex shrink-0 items-start gap-0.5 opacity-0 group-hover:opacity-100">
+          {/* A COLUMN's own "+ sibling" would add a stray non-column cell into the layout row above (block-editor.tsx's onSelectBlockType inserts at the same parentBlockId level) — not useful, so it's hidden here. Its own "+ Aggiungi blocco" (inside the COLUMN case above) covers adding content the column actually wants. COLUMN_LIST keeps this: inserting a new top-level block after the whole layout is fine. */}
+          {block.type !== "COLUMN" && (
+            <button
+              type="button"
+              onClick={() => onSelectBlockType(block.id, "PARAGRAPH")}
+              title="Aggiungi blocco sotto"
+              className="mt-1 text-muted-foreground hover:text-foreground"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" title="Azioni blocco" className="mt-1 text-muted-foreground hover:text-foreground">
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {/* Duplica/Trasforma in don't have sound semantics for a layout
+                  container: duplicate never copies children (documented
+                  limitation on onDuplicate) so it'd just clone an empty
+                  layout, and turning a COLUMN_LIST into e.g. a heading would
+                  orphan its COLUMN children (still pointing at a block that's
+                  no longer one). Elimina stays — it's the only way to
+                  remove a layout once inserted. */}
+              {block.type !== "COLUMN_LIST" && block.type !== "COLUMN" && (
+                <>
+                  <DropdownMenuItem onClick={() => onDuplicate(block.id)}>
+                    <Copy className="h-4 w-4 text-muted-foreground" /> Duplica blocco
+                  </DropdownMenuItem>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>Trasforma in</DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      {TURN_INTO_ITEMS.map((item) => {
+                        const Icon = item.icon;
+                        return (
+                          <DropdownMenuItem key={item.type} onClick={() => onTurnInto(block.id, item.type)}>
+                            <Icon className="h-4 w-4 text-muted-foreground" /> {item.title}
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+              <DropdownMenuItem onClick={() => onDelete(block.id)} className="text-destructive focus:text-destructive">
+                <Trash2 className="h-4 w-4" /> Elimina
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       )}
     </div>
   );

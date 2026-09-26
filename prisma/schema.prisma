@@ -519,6 +519,13 @@ model Procedure {
   requiresAck Boolean    @default(false) // Read & Acknowledge required
   isCritical  Boolean    @default(false) // "Critical Process" tag-equivalent flag
   visibility  Visibility @default(DEPARTMENT) // access restriction beyond RBAC
+  /// "Blocca pagina" (page-options menu). Freezes content (blocks + the
+  /// legacy contentJson/contentHtml PATCH path) against further edits until
+  /// a Department Owner/Admin unlocks it again — same population who can
+  /// publish, via canMutateProcedureContent() in lib/permissions. Does not
+  /// affect workflow transitions (submit/approve/reject/archive still work
+  /// while locked) or metadata-only reads.
+  isLocked Boolean @default(false)
 
   reviewDate      DateTime? // last review
   nextReviewDate  DateTime? // triggers reminders
@@ -906,7 +913,7 @@ model Acknowledgment {
   ipAddress      String?
   /// Which surface the confirmation came through — the compliance
   /// certificate (Fase 4) lists this per person. IN_APP for the
-  /// authenticated route, SLACK/GOOGLE_CHAT for a quick-confirm link
+  /// authenticated route, SLACK/GOOGLE_CHAT/TEAMS for a quick-confirm link
   /// clicked from that channel's reminder.
   channel        NotificationChannel @default(IN_APP)
 
@@ -1021,6 +1028,7 @@ enum AutomationActionType {
   SEND_NOTIFICATION // wraps notifyEvent() — the only already-audited notification path
   CHANGE_PROCEDURE_STATUS // restricted to ARCHIVED only, see src/lib/automations/actions.ts
   SEND_WEBHOOK // generic POST to an admin-supplied URL — unblocks Teams/Jira/ServiceNow via their own native incoming webhooks, no OAuth app registration needed (3.3)
+  ESCALATE_ACK_TO_MANAGERS // groups an AckCampaign's outstanding users by their manager (fallback: procedure owner) and sends one notification per manager — only meaningful on an ACK_CAMPAIGN_AGE trigger; migrated from the old scripts/send-ack-reminders.ts DAY_14 step, not expressible as SEND_NOTIFICATION (that action sends one fixed message to a resolved recipient set, not N dynamically-grouped ones)
 }
 
 model AutomationRule {
@@ -1103,6 +1111,7 @@ enum NotificationChannel {
   EMAIL
   SLACK
   GOOGLE_CHAT
+  TEAMS
 }
 
 model Notification {
@@ -1132,6 +1141,7 @@ model NotificationPreference {
   emailEnabled    Boolean @default(true)
   slackEnabled    Boolean @default(true)
   gchatEnabled    Boolean @default(false)
+  teamsEnabled    Boolean @default(false)
   digestFrequency String  @default("daily") // "instant" | "daily" | "weekly"
 
   @@map("notification_preferences")

@@ -50,7 +50,7 @@ export default async function AdminSettingsPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatLink icon={Users} label="Membri del team" value={users.length} href="#team" delay={120} />
         <StatLink icon={FolderTree} label="Dipartimenti" value={departments} href="/dashboard" delay={160} />
-        <StatLink icon={Plug} label="Integrazioni attive" value={integrations.filter((i) => i.isEnabled).length} href="/admin" delay={200} />
+        <StatLink icon={Plug} label="Integrazioni attive" value={integrations.filter((i) => i.isEnabled).length} href="/admin/integrations" delay={200} />
       </div>
 
       {/* Team */}
@@ -68,7 +68,7 @@ export default async function AdminSettingsPage() {
 
       {/* Integrations link */}
       <Link
-        href="/admin"
+        href="/admin/integrations"
         className="flex items-center justify-between rounded-lg border border-border bg-card px-5 py-4 shadow-sm opacity-0 animate-rise hover:bg-muted"
         style={{ animationDelay: "300ms" }}
       >
@@ -76,7 +76,7 @@ export default async function AdminSettingsPage() {
           <Plug className="h-5 w-5 text-primary" />
           <div>
             <p className="font-medium">Integrazioni & notifiche</p>
-            <p className="text-sm text-muted-foreground">Slack, Google Chat, e canali di notifica.</p>
+            <p className="text-sm text-muted-foreground">Slack, Google Chat, Microsoft Teams, SharePoint.</p>
           </div>
         </div>
         <ChevronRight className="h-5 w-5 text-muted-foreground" />

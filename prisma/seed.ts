@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { ensureDefaultAutomationRules } from "../src/lib/automations/defaults";
 
 const prisma = new PrismaClient();
 
@@ -165,6 +166,54 @@ async function main() {
       </ol>
     `;
 
+    // A real ProseMirror doc mirroring contentHtml above, not just {} — a
+    // {} here silently defeats every Block-recreation path that reads
+    // ProcedureVersion.contentJson (GET /api/procedures/[id]/blocks' lazy
+    // backfill, POST .../duplicate's own backfill, scripts/migrate-to-blocks.ts):
+    // opening this procedure in the block editor, or duplicating it, produced
+    // zero blocks despite contentHtml rendering fine — found verifying the
+    // reading-outline/TOC-block feature live, not a hypothetical.
+    const orderedListItem = (text: string) => ({
+      type: "listItem",
+      content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+    });
+    const contentJson = {
+      type: "doc",
+      content: [
+        { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Scopo" }] },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Questa procedura definisce le modalità di gestione di una richiesta di accesso ai dati personali (Data Subject Access Request) ai sensi del GDPR.",
+            },
+          ],
+        },
+        { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Ambito di applicazione" }] },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Si applica a tutte le richieste ricevute da clienti, dipendenti o terze parti riguardo al trattamento dei loro dati personali.",
+            },
+          ],
+        },
+        { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Passaggi operativi" }] },
+        {
+          type: "orderedList",
+          content: [
+            orderedListItem("Registrare la richiesta nel sistema DPO entro 24 ore dalla ricezione."),
+            orderedListItem("Verificare l'identità del richiedente."),
+            orderedListItem("Raccogliere i dati pertinenti dai sistemi coinvolti."),
+            orderedListItem("Preparare la risposta formale entro 30 giorni di calendario."),
+            orderedListItem("Ottenere approvazione del Data Protection Officer prima dell'invio."),
+          ],
+        },
+      ],
+    };
+
     const procedure = await prisma.procedure.create({
       data: {
         tenantId: tenant.id,
@@ -190,7 +239,7 @@ async function main() {
       data: {
         procedureId: procedure.id,
         versionNumber: 1,
-        contentJson: {},
+        contentJson,
         contentHtml,
         authorId: admin.id,
         changelog: "Versione iniziale pubblicata",
@@ -209,6 +258,9 @@ async function main() {
       isPinned: true,
     },
   });
+
+  console.log("Seeding default automation rules (review reminders, ack escalation)...");
+  await ensureDefaultAutomationRules(tenant.id);
 
   console.log("Done. Login with tenant 'demo' and password 'password123':");
   console.log("  admin@demo.com        (ADMIN)");

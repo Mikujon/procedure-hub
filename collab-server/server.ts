@@ -2,7 +2,7 @@ import { Hocuspocus } from "@hocuspocus/server";
 import * as Y from "yjs";
 import jwt from "jsonwebtoken";
 import { prisma } from "../src/lib/prisma";
-import { canEditProcedure, canViewProcedure } from "../src/lib/permissions";
+import { canMutateProcedureContent, canViewProcedure } from "../src/lib/permissions";
 
 /**
  * Standalone real-time collaboration process for the block editor. Runs
@@ -68,7 +68,7 @@ const server = new Hocuspocus({
       throw new Error("Procedure not found");
     }
 
-    const canEdit = await canEditProcedure(actingUser, procedure.departmentId);
+    const canEdit = await canMutateProcedureContent(actingUser, procedure);
     data.connection.readOnly = !canEdit;
 
     return { userId: dbUser.id, tenantId: dbUser.tenantId };

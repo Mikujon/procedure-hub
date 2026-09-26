@@ -1,8 +1,20 @@
 import type { DocumentStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { matchesConditions } from "./conditions";
-import { executeSendNotification, executeChangeProcedureStatus, executeSendWebhook } from "./actions";
-import type { AutomationConditions, SendNotificationConfig, ChangeProcedureStatusConfig, SendWebhookConfig } from "./types";
+import {
+  executeSendNotification,
+  executeChangeProcedureStatus,
+  executeSendWebhook,
+  executeEscalateAckToManagers,
+  type AckEscalationContext,
+} from "./actions";
+import type {
+  AutomationConditions,
+  SendNotificationConfig,
+  ChangeProcedureStatusConfig,
+  SendWebhookConfig,
+  EscalateAckToManagersConfig,
+} from "./types";
 
 interface RuleRow {
   id: string;
@@ -21,8 +33,19 @@ interface RuleRow {
  * dedup safe under concurrency, not just under a single-threaded read-then-
  * write. Never throws to the caller — a failing rule must not break the
  * workflow transition or cron tick that invoked it.
+ *
+ * `ackContext`, when supplied, is passed through to whichever action
+ * actually understands it (SEND_NOTIFICATION's ACK_OUTSTANDING recipient,
+ * ESCALATE_ACK_TO_MANAGERS) — only runAckCampaignAgeRule ever supplies it.
  */
-async function fireRule(rule: RuleRow, entityType: string, entityId: string, fireKey: string, procedureId: string) {
+async function fireRule(
+  rule: RuleRow,
+  entityType: string,
+  entityId: string,
+  fireKey: string,
+  procedureId: string,
+  ackContext?: AckEscalationContext
+) {
   try {
     await prisma.automationRun.create({
       data: { ruleId: rule.id, tenantId: rule.tenantId, entityType, entityId, fireKey, status: "SUCCESS" },
@@ -35,11 +58,13 @@ async function fireRule(rule: RuleRow, entityType: string, entityId: string, fir
 
   try {
     if (rule.actionType === "SEND_NOTIFICATION") {
-      await executeSendNotification(rule.tenantId, procedureId, rule.actionConfig as SendNotificationConfig);
+      await executeSendNotification(rule.tenantId, procedureId, rule.actionConfig as SendNotificationConfig, ackContext);
     } else if (rule.actionType === "CHANGE_PROCEDURE_STATUS") {
       await executeChangeProcedureStatus(rule.tenantId, procedureId, rule.actionConfig as ChangeProcedureStatusConfig);
     } else if (rule.actionType === "SEND_WEBHOOK") {
       await executeSendWebhook(rule.tenantId, procedureId, rule.actionConfig as SendWebhookConfig);
+    } else if (rule.actionType === "ESCALATE_ACK_TO_MANAGERS") {
+      await executeEscalateAckToManagers(rule.tenantId, procedureId, rule.actionConfig as EscalateAckToManagersConfig, ackContext);
     }
   } catch (err) {
     await prisma.automationRun.updateMany({
@@ -192,7 +217,33 @@ async function runAckCampaignAgeRule(rule: RuleRow): Promise<number> {
   let fired = 0;
   for (const c of campaigns) {
     if (!(await matchesConditions(c.procedure, rule.conditions as AutomationConditions))) continue;
-    await fireRule(rule, "AckCampaign", c.procedureId, String(days), c.procedureId);
+
+    // Who's still outstanding right now — targetUserIds is the campaign's
+    // frozen-at-creation audience (see AckCampaign.targetUserIds's own
+    // comment in schema.prisma), acknowledgments narrow it down live.
+    const acknowledged = await prisma.acknowledgment.findMany({
+      where: { procedureId: c.procedureId, versionNumber: c.versionNumber, userId: { in: c.targetUserIds } },
+      select: { userId: true },
+    });
+    const ackedIds = new Set(acknowledged.map((a) => a.userId));
+    const outstandingUserIds = c.targetUserIds.filter((id) => !ackedIds.has(id));
+    // maybeCompleteCampaign (lib/ack.ts) should already have closed this
+    // campaign once everyone acknowledged — skip defensively rather than
+    // firing an "outstanding" notification/escalation to nobody.
+    if (outstandingUserIds.length === 0) continue;
+
+    // fireKey = this campaign's own id, NOT `days` — a procedure can have
+    // more than one AckCampaign over its lifetime (republished with a new
+    // requiresAck version), and `days` alone doesn't distinguish them.
+    // Real bug this replaces: the previous fireKey (a bare `String(days)`)
+    // meant this rule could only ever fire once *per procedure, ever* —
+    // once ANY campaign for a procedure crossed the threshold and fired,
+    // @@unique([ruleId, entityId, fireKey]) permanently blocked every
+    // later campaign for that same procedure from ever firing it again.
+    // entityId switches to the campaign's own id too, matching
+    // entityType "AckCampaign" (it was the procedure's id before, despite
+    // the entity being labeled AckCampaign).
+    await fireRule(rule, "AckCampaign", c.id, c.id, c.procedureId, { ackCampaignId: c.id, ackOutstandingUserIds: outstandingUserIds });
     fired++;
   }
   return fired;

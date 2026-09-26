@@ -48,7 +48,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     },
   });
 
-  return NextResponse.json({ rule });
+  // This route never touches actionConfig itself (see the schema above),
+  // but Prisma's update() still returns the full row — mask the same
+  // SEND_WEBHOOK secret the list route does, see its comment for why.
+  const actionConfig = rule.actionConfig as Record<string, any>;
+  const sanitizedRule =
+    rule.actionType === "SEND_WEBHOOK" && actionConfig?.authHeader
+      ? { ...rule, actionConfig: { ...actionConfig, authHeader: "••••••••" } }
+      : rule;
+
+  return NextResponse.json({ rule: sanitizedRule });
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {

@@ -12,13 +12,21 @@ import { FavoriteButton } from "@/components/procedures/favorite-button";
 import { AttachmentsPanel } from "@/components/procedures/attachments-panel";
 import { VersionHistory } from "@/components/procedures/version-history";
 import { ExportMenu } from "@/components/procedures/export-menu";
+import { SharePointSyncButton } from "@/components/procedures/sharepoint-sync-button";
 import { CommentThread } from "@/components/procedures/comment-thread";
 import { ProcedureBreadcrumb } from "@/components/procedures/procedure-breadcrumb";
+import { ProcedureViewShell } from "@/components/procedures/procedure-view-shell";
+import { PageOptionsMenu } from "@/components/procedures/page-options-menu";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
-import { Pencil, History, MessageSquare } from "lucide-react";
+import { stripHtml } from "@/lib/search";
+import { renderContentWithToc } from "@/lib/toc";
+import { injectEmbedIframes, injectDiagramPlaceholders } from "@/lib/embedded-blocks";
+import { ReadingOutline } from "@/components/procedures/reading-outline";
+import { MermaidRenderer } from "@/components/procedures/mermaid-renderer";
+import { Pencil, History, MessageSquare, Lock } from "lucide-react";
 
 export default async function ProcedurePage({ params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -59,11 +67,16 @@ export default async function ProcedurePage({ params }: { params: { id: string }
   if (!procedure || procedure.tenantId !== tenantId) notFound();
 
   const actor = { id: userId, tenantId, globalRole: globalRole as any };
-  const [canEdit, canPublish] = await Promise.all([
+  const [canEdit, canPublish, sharePointIntegration] = await Promise.all([
     canEditProcedure(actor, procedure.departmentId),
     canPublishProcedure(actor, procedure.departmentId),
+    prisma.integration.findUnique({ where: { tenantId_type: { tenantId, type: "SHAREPOINT" } }, select: { isEnabled: true } }),
   ]);
   const canDecideCompliance = canActOnComplianceStage(actor);
+  // Same authority tier as the edit button below (rule 4) — the sync
+  // route re-checks canEditProcedure itself regardless, this just avoids
+  // showing a button that would 403 for a plain VIEWER.
+  const canSyncSharePoint = canEdit && sharePointIntegration?.isEnabled === true && procedure.status === "PUBLISHED";
 
   const pendingStep = procedure.workflowSteps.find((s) => s.status === "PENDING");
   const canDecide = pendingStep
@@ -83,9 +96,20 @@ export default async function ProcedurePage({ params }: { params: { id: string }
     globalRole === "ADMIN" || globalRole === "COMPLIANCE_OFFICER" || procedure.ownerId === userId;
 
   const commentCount = procedure.comments.reduce((n, c) => n + 1 + c.replies.length, 0);
+  // A pipeline over the rendered HTML: EMBED/DIAGRAM sentinels (see
+  // lib/blocks/serialize.ts) become a real <iframe> and a placeholder
+  // <pre> respectively (lib/embedded-blocks.ts — the diagram one needs
+  // MermaidRenderer below to actually render, client-side), then
+  // renderContentWithToc assigns heading anchor ids and splices any
+  // TABLE_OF_CONTENTS block's sentinel into links to those same anchors.
+  const withEmbeds = injectEmbedIframes(procedure.currentVersion?.contentHtml ?? "<p>Nessun contenuto ancora.</p>");
+  const withDiagrams = injectDiagramPlaceholders(withEmbeds);
+  const { html: renderedContentHtml, headings: tocHeadings } = renderContentWithToc(withDiagrams);
+  const contentText = stripHtml(renderedContentHtml);
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <ProcedureViewShell>
+      <MermaidRenderer />
       <ProcedureBreadcrumb
         departmentId={procedure.department.id}
         departmentSlug={procedure.department.slug}
@@ -105,6 +129,11 @@ export default async function ProcedurePage({ params }: { params: { id: string }
           {procedure.summary && <p className="mt-2 text-muted-foreground">{procedure.summary}</p>}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <StatusStamp status={procedure.status} />
+            {procedure.isLocked && (
+              <Badge variant="secondary" className="gap-1">
+                <Lock className="h-3 w-3" /> Bloccata
+              </Badge>
+            )}
             {procedure.isCritical && <Badge variant="destructive">Critical Process</Badge>}
             {procedure.tags.map((t) => (
               <Badge key={t.tagId} variant="secondary">
@@ -123,6 +152,7 @@ export default async function ProcedurePage({ params }: { params: { id: string }
         <div className="flex shrink-0 items-center gap-2">
           <FavoriteButton procedureId={procedure.id} initialFavorited={procedure.favorites.length > 0} />
           {procedure.currentVersion && <ExportMenu procedureId={procedure.id} />}
+          {canSyncSharePoint && <SharePointSyncButton procedureId={procedure.id} />}
           {canEdit && (
             <Button asChild variant="outline">
               <Link href={`/procedures/${procedure.id}/edit`}>
@@ -130,6 +160,13 @@ export default async function ProcedurePage({ params }: { params: { id: string }
               </Link>
             </Button>
           )}
+          <PageOptionsMenu
+            procedureId={procedure.id}
+            contentText={contentText}
+            canDuplicate={canEdit}
+            canLock={canPublish}
+            initialLocked={procedure.isLocked}
+          />
         </div>
       </div>
 
@@ -138,7 +175,7 @@ export default async function ProcedurePage({ params }: { params: { id: string }
           <Card>
             <CardContent
               className="prose prose-sm max-w-none py-5"
-              dangerouslySetInnerHTML={{ __html: procedure.currentVersion?.contentHtml ?? "<p>Nessun contenuto ancora.</p>" }}
+              dangerouslySetInnerHTML={{ __html: renderedContentHtml }}
             />
           </Card>
 
@@ -189,6 +226,8 @@ export default async function ProcedurePage({ params }: { params: { id: string }
         </div>
 
         <aside className="space-y-4">
+          <ReadingOutline headings={tocHeadings} />
+
           <WorkflowPanel
             procedureId={procedure.id}
             status={procedure.status}
@@ -252,6 +291,6 @@ export default async function ProcedurePage({ params }: { params: { id: string }
           </Card>
         </aside>
       </div>
-    </div>
+    </ProcedureViewShell>
   );
 }
