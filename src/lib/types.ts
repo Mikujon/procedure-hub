@@ -6,6 +6,12 @@ export type UserRole = "ADMIN" | "COMPLIANCE" | "OWNER" | "EDITOR" | "VIEWER";
 export type Visibility = "ALL" | "RESTRICTED";
 export type ViewKey =
   | "dashboard"
+  | "b7"
+  | "document"
+  | "compliance"
+  | "lg2"
+  | "hr8"
+  | "lg4"
   | "library"
   | "procedure"
   | "editor"

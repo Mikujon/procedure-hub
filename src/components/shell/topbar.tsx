@@ -33,10 +33,17 @@ import { Building2 } from "lucide-react";
 
 const VIEW_TITLES: Record<string, string> = {
   dashboard: "Dashboard",
-  library: "Procedure Library",
-  procedure: "Procedure",
-  approvals: "Approvals Queue",
-  admin: "Admin Console",
+  b7: "Le mie procedure",
+  document: "Documento",
+  compliance: "Coda Compliance",
+  hr8: "Comunicazioni",
+  lg2: "Policy e versioni",
+  lg4: "Prese visione",
+  library: "Library",
+  procedure: "Procedura",
+  editor: "Editor",
+  approvals: "Approvals",
+  admin: "Admin",
   favorites: "Favorites",
 };
 

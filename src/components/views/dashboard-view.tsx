@@ -93,11 +93,11 @@ export function DashboardView() {
             </h1>
             <p className="text-sm text-muted-foreground max-w-lg">
               You have{" "}
-              <button onClick={() => setView("approvals")} className="font-medium text-foreground underline-offset-4 hover:underline">
+              <button onClick={() => setView("b7")} className="font-medium text-foreground underline-offset-4 hover:underline">
                 {stats.pendingReviews} procedure{stats.pendingReviews === 1 ? "" : "s"} in review
               </button>{" "}
               and{" "}
-              <button onClick={() => setView("library")} className="font-medium text-foreground underline-offset-4 hover:underline">
+              <button onClick={() => setView("b7")} className="font-medium text-foreground underline-offset-4 hover:underline">
                 {stats.pendingAcks} acknowledgment{stats.pendingAcks === 1 ? "" : "s"} due
               </button>
               .
@@ -118,7 +118,7 @@ export function DashboardView() {
           hint={`${stats.published} published · ${stats.drafts} drafts`}
           icon={<FileText className="h-4 w-4" />}
           tone="primary"
-          onClick={() => setView("library")}
+          onClick={() => setView("b7")}
         />
         <StatCard
           label="In Review"
@@ -126,7 +126,7 @@ export function DashboardView() {
           hint="Awaiting approval"
           icon={<Eye className="h-4 w-4" />}
           tone="warning"
-          onClick={() => setView("approvals")}
+          onClick={() => setView("b7")}
         />
         <StatCard
           label="Ack Due"
@@ -134,7 +134,7 @@ export function DashboardView() {
           hint="Require your read-back"
           icon={<CircleAlert className="h-4 w-4" />}
           tone="danger"
-          onClick={() => setView("library")}
+          onClick={() => setView("b7")}
         />
         <StatCard
           label="Favorites"
@@ -142,7 +142,7 @@ export function DashboardView() {
           hint="Pinned for quick access"
           icon={<Star className="h-4 w-4" />}
           tone="success"
-          onClick={() => setView("favorites")}
+          onClick={() => setView("b7")}
         />
       </motion.section>
 
@@ -155,7 +155,7 @@ export function DashboardView() {
             icon={<Inbox className="h-4 w-4" />}
             action={
               <button
-                onClick={() => setView("approvals")}
+                onClick={() => setView("b7")}
                 className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
               >
                 View all <ArrowRight className="h-3.5 w-3.5" />
@@ -240,7 +240,7 @@ export function DashboardView() {
           icon={<Clock className="h-4 w-4" />}
           action={
             <button
-              onClick={() => setView("library")}
+              onClick={() => setView("b7")}
               className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
             >
               Browse all <ArrowRight className="h-3.5 w-3.5" />
@@ -263,7 +263,7 @@ export function DashboardView() {
             icon={<Star className="h-4 w-4" />}
             action={
               <button
-                onClick={() => setView("favorites")}
+                onClick={() => setView("b7")}
                 className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
               >
                 View all <ArrowRight className="h-3.5 w-3.5" />

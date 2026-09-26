@@ -181,3 +181,143 @@ export function useSaveContent(procedureId: string | null) {
     },
   });
 }
+
+// ---- KB hooks (Nodo contract) --------------------------------------------
+
+export function useKbSearch(params: { q?: string; tipo?: string; obbligatorio?: string } = {}) {
+  const { status } = useSession();
+  const qs = new URLSearchParams();
+  if (params.q) qs.set("q", params.q);
+  if (params.tipo) qs.set("tipo", params.tipo);
+  if (params.obbligatorio) qs.set("obbligatorio", params.obbligatorio);
+  const key = qs.toString();
+  return useQuery<{ results: any[]; count: number }>({
+    queryKey: ["kb-search", key],
+    queryFn: () => fetchJson(`/api/kb/search?${key}`),
+    enabled: status === "authenticated",
+  });
+}
+
+export function useKbDocument(id: string | null) {
+  const { status } = useSession();
+  return useQuery<any>({
+    queryKey: ["kb-document", id],
+    queryFn: () => fetchJson(`/api/kb/document?id=${id}`).then((r) => r.document),
+    enabled: !!id && status === "authenticated",
+  });
+}
+
+export function useKbReadStatus(documentId: string | null, scope: "self" | "team" | "all" = "self") {
+  const { status } = useSession();
+  return useQuery<any>({
+    queryKey: ["kb-read-status", documentId, scope],
+    queryFn: () => fetchJson(`/api/kb/read-status?documentId=${documentId}&scope=${scope}`),
+    enabled: !!documentId && status === "authenticated",
+  });
+}
+
+export function useKbAck() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ documentId, versionId, via, performedBy }: { documentId: string; versionId: string; via?: string; performedBy?: string }) => {
+      const res = await fetch("/api/kb/acknowledge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentId, versionId, via, performedBy }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "Ack failed");
+      }
+      return res.json();
+    },
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ["kb-document", vars.documentId] });
+      qc.invalidateQueries({ queryKey: ["kb-search"] });
+      qc.invalidateQueries({ queryKey: ["kb-read-status", vars.documentId] });
+      qc.invalidateQueries({ queryKey: ["bootstrap"] });
+    },
+  });
+}
+
+export function useKbApprove() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ documentId, decision, comment }: { documentId: string; decision: "approved" | "rejected"; comment?: string }) => {
+      const res = await fetch("/api/kb/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentId, decision, comment }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "Approve failed");
+      }
+      return res.json();
+    },
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ["kb-document", vars.documentId] });
+      qc.invalidateQueries({ queryKey: ["kb-search"] });
+      qc.invalidateQueries({ queryKey: ["bootstrap"] });
+    },
+  });
+}
+
+export function useKbPublish() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: any) => {
+      const res = await fetch("/api/kb/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "Publish failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["kb-search"] });
+      qc.invalidateQueries({ queryKey: ["bootstrap"] });
+    },
+  });
+}
+
+export function useKbRemind() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ documentId }: { documentId: string }) => {
+      const res = await fetch("/api/kb/remind", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "Remind failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["kb-search"] });
+    },
+  });
+}
+
+export function useKbTree() {
+  const { status } = useSession();
+  return useQuery<any>({
+    queryKey: ["kb-tree"],
+    queryFn: () => fetchJson("/api/kb/tree"),
+    enabled: status === "authenticated",
+  });
+}
+
+// Compliance queue: documents awaiting compliance approval
+export function useComplianceQueue() {
+  const { data } = useKbSearch({});
+  const docs = (data?.results ?? []).filter((d: any) => d.document.status === "in_review");
+  return { data: docs, isLoading: false };
+}

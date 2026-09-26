@@ -110,13 +110,28 @@ export const CRITICALITY_CONFIG: Record<Criticality, CriticalityConfig> = {
   },
 };
 
-export const ROLE_LABELS: Record<UserRole, string> = {
+export const ROLE_LABELS: Record<string, string> = {
   ADMIN: "Administrator",
   COMPLIANCE: "Compliance Officer",
   OWNER: "Department Owner",
   EDITOR: "Editor",
   VIEWER: "Viewer",
+  HR_HEAD: "HR Head",
+  LEGAL_HEAD: "Legal Head",
+  LEGAL_MANAGER: "Legal Manager",
+  TL: "Team Leader",
+  FM: "Floor Manager",
+  CSDM: "Customer Success Delivery Manager",
+  COO: "Chief Operating Officer",
 };
+
+export function roleLabel(role: string): string {
+  return ROLE_LABELS[role] ?? role;
+}
+
+// re-export the RBAC `can` from permissions.ts (kept here for convenience
+// import in components that already import from domain)
+export { can } from "@/lib/permissions";
 
 export const WORKFLOW_STAGES: ProcedureStatus[] = ["DRAFT", "IN_REVIEW", "PUBLISHED", "ARCHIVED"];
 
