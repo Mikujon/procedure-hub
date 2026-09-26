@@ -318,3 +318,17 @@ model Department {
 
   @@unique([tenantId, slug])
 }
+
+// Webhook configuration — per-tenant, configurable from Admin Console.
+// When a document is published/acked/submitted, the system fires a POST
+// to each active webhook whose events list includes the event type.
+model WebhookConfig {
+  id          String   @id @default(cuid())
+  tenantId    String
+  url         String
+  secret      String   @default("")  // HMAC-SHA256 signing secret
+  events      String   @default("[]") // JSON array: ["kb.document.published", ...] or ["*"]
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

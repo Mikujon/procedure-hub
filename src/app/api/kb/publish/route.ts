@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getTenantContext } from "@/lib/session";
 import { can, canPublish, getRequiredApprovals } from "@/lib/permissions";
+import { fireWebhook } from "@/lib/webhook";
 
 export const dynamic = "force-dynamic";
 
@@ -118,6 +119,10 @@ export async function POST(req: Request) {
     },
   });
 
+  if (publishNow) {
+    await fireWebhook(tenantId, "kb.document.submitted", { documentId: document.id, requiredApprovals });
+  }
+
   return NextResponse.json({
     ok: true,
     documentId: document.id,
@@ -195,11 +200,13 @@ async function publishNowFn(
       action: "PUBLISH",
       entityType: "DOCUMENT",
       entityId: documentId,
-      summary: `Published v${nextNumero} (${lingua}) — webhook kb.document.published fired`,
+      summary: `Published v${nextNumero} (${lingua})`,
       userId,
       procedureId: documentId,
     },
   });
+
+  await fireWebhook(tenantId, "kb.document.published", { documentId, version: nextNumero, lingua });
 }
 
 async function nextCode(tenantId: string, tipo: string): Promise<string> {

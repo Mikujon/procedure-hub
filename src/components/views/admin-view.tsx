@@ -17,6 +17,7 @@ import {
   MapPin,
   Globe,
   Power,
+  Webhook,
 } from "lucide-react";
 import {
   useAdminUsers,
@@ -31,6 +32,9 @@ import {
   useDeleteAssignment,
   useAdminDocTypes,
   useUpdateDocType,
+  useAdminWebhooks,
+  useCreateWebhook,
+  useDeleteWebhook,
 } from "@/lib/hooks";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -45,7 +49,7 @@ const DOC_TIPOS = ["policy", "procedura", "processo", "comunicazione", "document
 const APPROVAL_ROLES = ["compliance", "quality", "training", "hr"];
 
 export function AdminView() {
-  const [tab, setTab] = React.useState<"users" | "org" | "types">("users");
+  const [tab, setTab] = React.useState<"users" | "org" | "types" | "webhooks">("users");
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="space-y-6">
@@ -55,11 +59,12 @@ export function AdminView() {
       </div>
 
       {/* tabs */}
-      <div className="flex items-center gap-1.5 border-b border-border">
+      <div className="flex items-center gap-1.5 border-b border-border overflow-x-auto">
         {([
           { key: "users", label: "Utenti", icon: UsersIcon },
           { key: "org", label: "Organigramma", icon: Network },
           { key: "types", label: "Tipi documento", icon: Settings2 },
+          { key: "webhooks", label: "Webhook", icon: Webhook },
         ] as const).map((t) => (
           <button
             key={t.key}
@@ -80,6 +85,7 @@ export function AdminView() {
       {tab === "users" && <UsersTab />}
       {tab === "org" && <OrgTab />}
       {tab === "types" && <TypesTab />}
+      {tab === "webhooks" && <WebhooksTab />}
     </motion.div>
   );
 }
@@ -445,6 +451,121 @@ function TypesTab() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- Webhooks tab -------------------------------------------------------
+function WebhooksTab() {
+  const { data, isLoading } = useAdminWebhooks();
+  const createWebhook = useCreateWebhook();
+  const deleteWebhook = useDeleteWebhook();
+  const [showCreate, setShowCreate] = React.useState(false);
+  const [newUrl, setNewUrl] = React.useState("");
+  const [newEvents, setNewEvents] = React.useState<Set<string>>(new Set(["*"]));
+  const [createdSecret, setCreatedSecret] = React.useState<string | null>(null);
+
+  const webhooks = data?.webhooks ?? [];
+  const availableEvents = data?.availableEvents ?? [];
+
+  const toggleEvent = (event: string) => {
+    setNewEvents((prev) => {
+      const n = new Set(prev);
+      if (n.has(event)) { n.delete(event); } else { n.add(event); }
+      return n;
+    });
+  };
+
+  const submit = () => {
+    if (!newUrl || !newUrl.startsWith("http")) { toast.error("URL valido richiesto"); return; }
+    createWebhook.mutate(
+      { url: newUrl, events: Array.from(newEvents) },
+      {
+        onSuccess: (res: any) => {
+          toast.success("Webhook creato");
+          setCreatedSecret(res.secret);
+          setNewUrl("");
+          setNewEvents(new Set(["*"]));
+          setShowCreate(false);
+        },
+        onError: (e: any) => toast.error(e.message),
+      }
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">{webhooks.length} webhook configurati</p>
+        <button onClick={() => setShowCreate(!showCreate)} className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:brightness-105">
+          <Plus className="h-4 w-4" /> Nuovo webhook
+        </button>
+      </div>
+
+      {showCreate && (
+        <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">URL destinatario</label>
+            <input value={newUrl} onChange={(e) => setNewUrl(e.target.value)} placeholder="https://hooks.slack.com/... o https://api.tuo-servizio.com/webhook" className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Eventi da ascoltare</label>
+            <div className="flex flex-wrap gap-1.5">
+              {availableEvents.map((e: any) => (
+                <button key={e.value} onClick={() => toggleEvent(e.value)}
+                  className={cn("rounded-md border px-2.5 py-1 text-xs font-medium", newEvents.has(e.value) ? "border-primary/30 bg-primary/10 text-primary" : "border-border text-muted-foreground")}>
+                  {e.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setShowCreate(false)} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-muted">Annulla</button>
+            <button onClick={submit} disabled={createWebhook.isPending} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:brightness-105 disabled:opacity-60">
+              {createWebhook.isPending && <Loader2 className="h-4 w-4 animate-spin" />} Crea webhook
+            </button>
+          </div>
+        </div>
+      )}
+
+      {createdSecret && (
+        <div className="rounded-xl border border-status-review/30 bg-status-review/5 p-4 space-y-2">
+          <p className="text-sm font-medium text-status-review">⚠️ Salva il secret — lo vedi solo questa volta</p>
+          <code className="block rounded-md bg-background px-3 py-2 font-mono text-sm break-all">{createdSecret}</code>
+          <button onClick={() => setCreatedSecret(null)} className="text-xs text-muted-foreground hover:text-foreground">Chiudi</button>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="h-32 rounded-xl border border-border shimmer" />
+      ) : webhooks.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border p-8 text-center">
+          <Webhook className="mx-auto h-8 w-8 text-muted-foreground/40 mb-2" />
+          <p className="text-sm text-muted-foreground">Nessun webhook configurato. Crea il primo per ricevere notifiche esterne (Slack, Teams, email, ecc.).</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {webhooks.map((w: any) => (
+            <div key={w.id} className="flex items-center justify-between rounded-xl border border-border bg-card p-4">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <Webhook className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium truncate">{w.url}</span>
+                </div>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {w.events.map((e: string) => (
+                    <span key={e} className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{e}</span>
+                  ))}
+                </div>
+                <p className="mt-1 text-[10px] text-muted-foreground">secret: {w.secret}</p>
+              </div>
+              <button onClick={() => { if (confirm("Eliminare questo webhook?")) deleteWebhook.mutate(w.id, { onSuccess: () => toast.success("Webhook eliminato") }); }} className="text-muted-foreground hover:text-destructive">
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>

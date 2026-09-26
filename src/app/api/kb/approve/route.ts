@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getTenantContext } from "@/lib/session";
 import { canApproveAs, isWorkflowComplete, getRequiredApprovals } from "@/lib/permissions";
+import { fireWebhook } from "@/lib/webhook";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +56,7 @@ export async function POST(req: Request) {
         summary: `Rejected by ${pending.role}`, userId, procedureId: documentId,
       },
     });
+    await fireWebhook(tenantId, "kb.document.rejected", { documentId, role: pending.role });
     return NextResponse.json({ ok: true, status: "rejected" });
   }
 
@@ -71,6 +73,7 @@ export async function POST(req: Request) {
         summary: `Approved by ${pending.role} — workflow complete`, userId, procedureId: documentId,
       },
     });
+    await fireWebhook(tenantId, "kb.document.approved", { documentId, role: pending.role });
     return NextResponse.json({ ok: true, status: "approved", workflowComplete: true });
   }
 

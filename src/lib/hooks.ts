@@ -458,3 +458,37 @@ export function useUpdateDocType() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-doc-types"] }),
   });
 }
+
+// ---- Webhook hooks ----
+export function useAdminWebhooks() {
+  const { status } = useSession();
+  return useQuery<{ webhooks: any[]; availableEvents: any[] }>({
+    queryKey: ["admin-webhooks"],
+    queryFn: () => fetchJson("/api/kb/admin/webhooks"),
+    enabled: status === "authenticated",
+  });
+}
+
+export function useCreateWebhook() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { url: string; secret?: string; events: string[] }) => {
+      const res = await fetch("/api/kb/admin/webhooks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Create failed"); }
+      return res.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-webhooks"] }),
+  });
+}
+
+export function useDeleteWebhook() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/kb/admin/webhooks/${id}`, { method: "DELETE" });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Delete failed"); }
+      return res.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-webhooks"] }),
+  });
+}

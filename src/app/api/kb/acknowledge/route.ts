@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getTenantContext } from "@/lib/session";
 import { can } from "@/lib/permissions";
+import { fireWebhook } from "@/lib/webhook";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,8 @@ export async function POST(req: Request) {
       procedureId: documentId,
     },
   });
+
+  await fireWebhook(tenantId, "kb.document.acknowledged", { documentId, versionId, userId });
 
   return NextResponse.json({ ok: true, at: ack.at.toISOString() });
 }
