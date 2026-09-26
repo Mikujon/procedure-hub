@@ -32,19 +32,21 @@ export function LoginView() {
     e.preventDefault();
     if (loading) return;
     setLoading(true);
-    const res = await signIn("credentials", {
-      email,
-      password,
-      redirect: false,
-    });
-    setLoading(false);
-    if (res?.error) {
+    // redirect: true lets NextAuth own the full flow — it sets the session
+    // cookie server-side and redirects back to "/", where useSession() picks
+    // up the authenticated state cleanly. The manual redirect:false +
+    // window.location.replace combo was causing a login-loop (useSession
+    // didn't see the new cookie on the first render and bounced back to /).
+    try {
+      await signIn("credentials", {
+        email,
+        password,
+        redirect: true,
+        callbackUrl: "/",
+      });
+    } catch (err) {
+      setLoading(false);
       toast.error("Sign in failed", { description: "Check your email and password." });
-    } else if (res?.ok) {
-      toast.success("Welcome back");
-      // Hard reload so the SessionProvider re-reads the freshly-set JWT
-      // cookie and AppShell renders the authenticated workspace.
-      window.location.replace("/");
     }
   };
 
