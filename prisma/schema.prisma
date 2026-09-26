@@ -1,6 +1,25 @@
-// Procedure Hub — redesigned data model (multi-tenant + auth)
+// Procedure Hub — Nodo-aligned data model
 // SQLite-backed. Enums stored as String; tag/content lists stored as JSON string
 // (SQLite has no native array/list type per project rules).
+//
+// Core concepts (from Nodo Knowledge Base spec):
+//  - OrgNode: hierarchical tree (company → branch → function/client →
+//    campaign → subcampaign → team). Visibility cascades DOWN: a document
+//    attached to a node is seen by everyone at or below that node.
+//  - Document: stable object with a tipo (policy/procedura/processo/
+//    comunicazione/documento), stato (bozza/in_vigore/ritirato),
+//    obbligatorio flag, owner.
+//  - Version: what's actually read + acked. Multi-language (it/sq/en/de).
+//    Acknowledgment is per-version: a new mandatory version invalidates the
+//    previous ack (the reader sees it again as "to read").
+//  - Destination: who a version goes to — node_ids[] + sedi[] + ruoli[] +
+//    lingue[]. Filters NARROW the cascade, never widen it.
+//  - Acknowledgment: IMMUTABLE. Append-only. Per (employee, document,
+//    version). Has legal value.
+//  - ApprovalStage: configurable per document type. For now only "compliance"
+//    is configured; quality/training/hr can be added without code changes
+//    via the DocumentTypeApproval table.
+//  - Tenant isolation enforced everywhere (tenantId on every entity).
 
 generator client {
   provider = "prisma-client-js"
@@ -12,13 +31,13 @@ datasource db {
 }
 
 model Tenant {
-  id        String       @id @default(cuid())
-  name      String
-  slug      String       @unique
-  createdAt DateTime     @default(now())
-  users     User[]
-  departments Department[]
-  procedures Procedure[]
+  id            String         @id @default(cuid())
+  name          String
+  slug          String         @unique
+  createdAt     DateTime       @default(now())
+  users         User[]
+  orgNodes      OrgNode[]
+  documents     Document[]
   announcements Announcement[]
 }
 
@@ -29,105 +48,221 @@ model User {
   name          String
   email         String         @unique
   passwordHash  String
-  role          String         @default("VIEWER") // ADMIN | COMPLIANCE | OWNER | EDITOR | VIEWER
+  // role: global role (ADMIN/COMPLIANCE/HR_HEAD/LEGAL_HEAD/TL/FM/CSDM/COO/VIEWER)
+  // Combined with per-node assignments to compute the perimeter.
+  role          String         @default("VIEWER")
   title         String?
   avatarColor   String         @default("#c2410c")
-  departmentId  String?
-  department    Department?    @relation(fields: [departmentId], references: [id])
+  // location: AL | XK | IT (Nodo spec — sede is a person attribute, not a node)
+  location      String?
+  // preferred language: it | sq | en | de
+  language      String         @default("it")
   createdAt     DateTime       @default(now())
+
+  // org assignments (member/manager of nodes, with validity window)
+  assignments   OrgAssignment[]
 
   favorites     Favorite[]
   acknowledgments Acknowledgment[]
   notifications Notification[]
   auditLogs     AuditLog[]
-  ownedProcedures Procedure[]
+  ownedDocuments Document[]
+  approvals     Approval[]
 }
 
-model Department {
-  id          String    @id @default(cuid())
+// ---- Organigram (l'albero) ----------------------------------------------
+// The tree is tenant-scoped. Node types per Nodo spec:
+// company, branch (Administration/Operation), function, client, campaign,
+// subcampaign, team. The tree is SELF-REFERENTIAL via parentId.
+model OrgNode {
+  id          String   @id @default(cuid())
   tenantId    String
-  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // type: company | branch | function | client | campaign | subcampaign | team
+  type        String
   name        String
-  slug        String
-  icon        String // lucide icon name
-  color       String // hex hue used for accents/tints
-  description String?
-  sortOrder   Int       @default(0)
-  processes   Process[]
-  procedures  Procedure[]
-  users       User[]
-  createdAt   DateTime  @default(now())
+  code        String?  // optional human code (e.g. "HR", "OPS-CLIENT-A")
+  parentId    String?
+  parent      OrgNode? @relation("OrgTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children    OrgNode[] @relation("OrgTree")
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
 
-  @@unique([tenantId, slug])
-}
-
-model Process {
-  id           String      @id @default(cuid())
-  name         String
-  sortOrder    Int         @default(0)
-  departmentId String
-  department   Department  @relation(fields: [departmentId], references: [id], onDelete: Cascade)
-  procedures   Procedure[]
-  createdAt    DateTime    @default(now())
-}
-
-model Procedure {
-  id            String         @id @default(cuid())
-  tenantId      String
-  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  code          String
-  title         String
-  summary       String
-  departmentId  String
-  department    Department     @relation(fields: [departmentId], references: [id], onDelete: Cascade)
-  processId     String?
-  process       Process?       @relation(fields: [processId], references: [id], onDelete: SetNull)
-  parentId      String? // Work Instruction points to parent Procedure
-  parent        Procedure?     @relation("ProcedureTree", fields: [parentId], references: [id], onDelete: SetNull)
-  children      Procedure[]    @relation("ProcedureTree")
-  status        String         @default("DRAFT") // DRAFT | IN_REVIEW | PUBLISHED | ARCHIVED
-  version       Int            @default(1)
-  criticality   String         @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
-  visibility    String         @default("ALL") // ALL | RESTRICTED
-  tags          String         @default("[]") // JSON array of strings
-  content       String         @default("[]") // JSON array of blocks
-  ownerId       String
-  owner         User           @relation(fields: [ownerId], references: [id])
-  ackRequired   Boolean        @default(true)
-  readMinutes   Int            @default(5)
-  nextReviewAt  DateTime?
-  publishedAt   DateTime?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-
-  favorites     Favorite[]
-  acknowledgments Acknowledgment[]
-  auditLogs     AuditLog[]
+  assignments OrgAssignment[]
 
   @@unique([tenantId, code])
 }
 
+// Membership/management of a node, with validity window (V7 rule):
+// when someone changes team, the old assignment gets a valid_to and a new
+// one starts. History is preserved.
+model OrgAssignment {
+  id          String   @id @default(cuid())
+  tenantId    String
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nodeId      String
+  node        OrgNode  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  // relation: member | manager
+  relation    String   @default("member")
+  validFrom   DateTime @default(now())
+  validTo     DateTime?
+  createdAt   DateTime @default(now())
+
+  @@unique([tenantId, userId, nodeId, relation])
+}
+
+// ---- Document model ------------------------------------------------------
+model Document {
+  id            String         @id @default(cuid())
+  tenantId      String
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  code          String          // e.g. "POL-001", "PROC-HR-01"
+  title         String
+  summary       String          @default("")
+  // tipo: policy | procedura | processo | comunicazione | documento
+  tipo          String          @default("documento")
+  category      String?
+  // obbligatorio: if true, enters "Da leggere" with a deadline, feeds LG-4
+  obbligatorio Boolean         @default(false)
+  // stato: bozza | in_vigore | ritirato
+  stato         String          @default("bozza")
+  // workflow status: draft | in_review | approved | published | archived
+  status        String          @default("draft")
+  ownerId       String
+  owner         User            @relation(fields: [ownerId], references: [id])
+  // JSON: required approval roles for this tipo (e.g. ["compliance"])
+  // — drives the approval workflow. Configurable per tipo via DocumentTypeApproval.
+  requiredApprovals String      @default("[]")
+  // JSON: array of block objects (same Block type as before)
+  content       String          @default("[]")
+  tags          String          @default("[]")
+  // visibility: all | restricted (Nodo rule 7.3.7 — default closed)
+  visibility    String          @default("restricted")
+  currentVersionId String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  versions      Version[]
+  destinations  Destination[]
+  favorites     Favorite[]
+  acknowledgments Acknowledgment[]
+  auditLogs     AuditLog[]
+  approvals     Approval[]
+
+  @@unique([tenantId, code])
+}
+
+// Version: what's actually read + acked. Multi-language.
+model Version {
+  id            String         @id @default(cuid())
+  tenantId      String
+  documentId    String
+  document      Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  // numero: monotonic, never reused
+  numero        Int
+  // lingua: it | sq | en | de — one version per language, linked together
+  // via the same numero across languages
+  lingua        String          @default("it")
+  inVigoreDal   DateTime?
+  // JSON: block content specific to this version (the actual text)
+  testo         String          @default("[]")
+  // JSON: diff against the previous version (computed on publish)
+  differenze    String?
+  approvataDa   String?
+  approvataIl   DateTime?
+  isCurrent     Boolean         @default(false)
+  createdAt     DateTime        @default(now())
+
+  acknowledgments Acknowledgment[]
+
+  @@unique([documentId, numero, lingua])
+}
+
+// Destination: who a version goes to. Filters NARROW the cascade.
+// node_ids[]: nodes the doc is attached to (cascade DOWN to all descendants)
+// sedi[]: optional AL/XK/IT filter
+// ruoli[]: optional role filter
+// lingue[]: optional language filter
+model Destination {
+  id            String         @id @default(cuid())
+  tenantId      String
+  documentId    String
+  document      Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  versionId     String?
+  // JSON arrays
+  nodeIds       String         @default("[]")
+  sedi          String         @default("[]")
+  ruoli         String         @default("[]")
+  lingue        String         @default("[]")
+  createdAt     DateTime       @default(now())
+}
+
+// Acknowledgment: IMMUTABLE. Append-only. Per (employee, document, version).
+model Acknowledgment {
+  id            String         @id @default(cuid())
+  tenantId      String
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documentId    String
+  document      Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  versionId     String
+  version       Version         @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  at            DateTime       @default(now())
+  // via: diretta | tramite_responsabile (Nodo rule 3.5)
+  via           String         @default("diretta")
+  // if via = tramite_responsabile, who actually performed the ack
+  performedBy   String?
+
+  @@unique([userId, documentId, versionId])
+}
+
+// Approval: an approval step in the workflow. Configurable per tipo.
+// For now only "compliance" is used; quality/training/hr can be added
+// without code changes by inserting rows here.
+model Approval {
+  id            String         @id @default(cuid())
+  tenantId      String
+  documentId    String
+  document      Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  // role: compliance | quality | training | hr (configurable)
+  role          String
+  userId        String?
+  user          User?          @relation(fields: [userId], references: [id])
+  // status: pending | approved | rejected
+  status        String          @default("pending")
+  comment       String?
+  decidedAt     DateTime?
+  createdAt     DateTime       @default(now())
+
+  @@unique([documentId, role])
+}
+
+// Configurable approval stages per document type.
+// e.g. tipo="policy" → requiredApprovals=["compliance"]
+// e.g. tipo="comunicazione" → requiredApprovals=[]
+// e.g. tipo="procedura" → requiredApprovals=["compliance","quality"] (future)
+model DocumentTypeApproval {
+  id              String   @id @default(cuid())
+  tenantId        String
+  tipo            String   // policy | procedura | processo | comunicazione | documento
+  requiredApprovals String @default("[]") // JSON array of role names
+  createdAt       DateTime @default(now())
+
+  @@unique([tenantId, tipo])
+}
+
+// ---- Legacy / convenience models (kept for backward compat with existing UI) ----
+
 model Favorite {
   id          String    @id @default(cuid())
   userId      String
-  procedureId String
+  procedureId String   // points to Document.id
   createdAt   DateTime  @default(now())
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  procedure   Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+  document    Document  @relation(fields: [procedureId], references: [id], onDelete: Cascade)
 
   @@unique([userId, procedureId])
-}
-
-model Acknowledgment {
-  id          String    @id @default(cuid())
-  userId      String
-  procedureId String
-  version     Int
-  acknowledgedAt DateTime @default(now())
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  procedure   Procedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, procedureId, version])
 }
 
 model Notification {
@@ -146,13 +281,13 @@ model AuditLog {
   id          String    @id @default(cuid())
   tenantId    String
   action      String    // CREATE | UPDATE | SUBMIT | APPROVE | REJECT | PUBLISH | ARCHIVE | ACK | FAVORITE
-  entityType  String    // PROCEDURE | PROCESS | DEPARTMENT | USER
+  entityType  String
   entityId    String
   summary     String
   userId      String?
   user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   procedureId String?
-  procedure   Procedure? @relation(fields: [procedureId], references: [id], onDelete: SetNull)
+  document    Document? @relation(fields: [procedureId], references: [id], onDelete: SetNull)
   createdAt   DateTime  @default(now())
 }
 
@@ -162,7 +297,23 @@ model Announcement {
   tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   title       String
   body        String
-  variant     String    @default("info") // info | success | warning
+  variant     String    @default("info")
   pinned      Boolean   @default(false)
   createdAt   DateTime  @default(now())
+}
+
+// Keep the old Department/Process/Procedure models for backward compat with
+// the existing seed/UI during the migration. New code uses OrgNode + Document.
+model Department {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  slug        String
+  icon        String
+  color       String
+  description String?
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  @@unique([tenantId, slug])
 }
