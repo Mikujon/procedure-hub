@@ -57,6 +57,7 @@ model User {
   location      String?
   // preferred language: it | sq | en | de
   language      String         @default("it")
+  active         Boolean        @default(true)
   createdAt     DateTime       @default(now())
 
   // org assignments (member/manager of nodes, with validity window)

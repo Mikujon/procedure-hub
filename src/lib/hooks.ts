@@ -321,3 +321,140 @@ export function useComplianceQueue() {
   const docs = (data?.results ?? []).filter((d: any) => d.document.status === "in_review");
   return { data: docs, isLoading: false };
 }
+
+// ---- Admin hooks ---------------------------------------------------------
+
+export function useAdminUsers() {
+  const { status } = useSession();
+  return useQuery<{ users: any[] }>({
+    queryKey: ["admin-users"],
+    queryFn: () => fetchJson("/api/kb/admin/users"),
+    enabled: status === "authenticated",
+  });
+}
+
+export function useCreateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { name: string; email: string; password: string; role: string; title?: string; location?: string; language?: string; avatarColor?: string }) => {
+      const res = await fetch("/api/kb/admin/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Create failed"); }
+      return res.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-users"] }),
+  });
+}
+
+export function useUpdateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...data }: { id: string; role?: string; title?: string; location?: string; language?: string; active?: boolean; avatarColor?: string }) => {
+      const res = await fetch(`/api/kb/admin/users/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Update failed"); }
+      return res.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-users"] }),
+  });
+}
+
+export function useDeleteUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/kb/admin/users/${id}`, { method: "DELETE" });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Delete failed"); }
+      return res.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-users"] }),
+  });
+}
+
+export function useAdminOrgTree() {
+  const { status } = useSession();
+  return useQuery<{ tree: any[] }>({
+    queryKey: ["admin-org-tree"],
+    queryFn: () => fetchJson("/api/kb/admin/org-nodes"),
+    enabled: status === "authenticated",
+  });
+}
+
+export function useCreateOrgNode() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { type: string; name: string; code?: string; parentId?: string }) => {
+      const res = await fetch("/api/kb/admin/org-nodes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Create failed"); }
+      return res.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-org-tree"] }),
+  });
+}
+
+export function useUpdateOrgNode() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...data }: { id: string; name?: string; code?: string; parentId?: string }) => {
+      const res = await fetch(`/api/kb/admin/org-nodes/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Update failed"); }
+      return res.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-org-tree"] }),
+  });
+}
+
+export function useDeleteOrgNode() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/kb/admin/org-nodes/${id}`, { method: "DELETE" });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Delete failed"); }
+      return res.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-org-tree"] }),
+  });
+}
+
+export function useCreateAssignment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { userId: string; nodeId: string; relation: string }) => {
+      const res = await fetch("/api/kb/admin/assignments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Assign failed"); }
+      return res.json();
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-org-tree"] }); qc.invalidateQueries({ queryKey: ["admin-users"] }); },
+  });
+}
+
+export function useDeleteAssignment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/kb/admin/assignments/${id}`, { method: "DELETE" });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Unassign failed"); }
+      return res.json();
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-org-tree"] }); qc.invalidateQueries({ queryKey: ["admin-users"] }); },
+  });
+}
+
+export function useAdminDocTypes() {
+  const { status } = useSession();
+  return useQuery<{ configs: any[] }>({
+    queryKey: ["admin-doc-types"],
+    queryFn: () => fetchJson("/api/kb/admin/doc-types"),
+    enabled: status === "authenticated",
+  });
+}
+
+export function useUpdateDocType() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { tipo: string; requiredApprovals: string[] }) => {
+      const res = await fetch("/api/kb/admin/doc-types", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Update failed"); }
+      return res.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-doc-types"] }),
+  });
+}

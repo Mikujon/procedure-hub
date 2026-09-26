@@ -11,6 +11,7 @@ import {
   ScrollText,
   LogOut,
   ChevronRight,
+  Settings2,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
@@ -40,6 +41,7 @@ export function Sidebar() {
     { key: "hr8", label: "Comunicazioni (HR-8)", icon: <Megaphone className="h-4 w-4" />, roles: ["HR_HEAD", "ADMIN"] },
     { key: "lg2", label: "Policy e versioni (LG-2)", icon: <Scale className="h-4 w-4" />, roles: ["LEGAL_HEAD", "ADMIN"] },
     { key: "lg4", label: "Prese visione (LG-4)", icon: <Eye className="h-4 w-4" />, roles: ["LEGAL_HEAD", "LEGAL_MANAGER", "ADMIN"] },
+    { key: "admin", label: "Admin Console", icon: <Settings2 className="h-4 w-4" />, roles: ["ADMIN"] },
   ];
 
   const visibleItems = items.filter((i) => !i.roles || i.roles.includes(role));
